@@ -6,13 +6,16 @@
 ipua/
 ├─ wrangler.toml          ← Pages 設定：專案名、輸出資料夾、D1 綁定
 ├─ ADMIN.md               ← 這份筆記
-├─ .claude/skills/uaip-api/SKILL.md ← 給 AI agent 的網站操作指南（Claude Code 會自動載入）
+├─ API.md                 ← 完整 API 文件（**唯一原稿**，GitHub 直接可讀；線上 /api-docs 由它產生）
+├─ AGENTS.md              ← 給 AI agent 的操作指南（金鑰在哪、流程照抄、驗證清單）
+├─ .claude/skills/uaip-api/SKILL.md ← Claude Code skill 入口（薄殼，指向 AGENTS.md／API.md）
+├─ tools/build-apidoc.mjs ← 把 API.md 轉成 lib/apidoc.js（改完 API.md 要跑一次再部署）
 ├─ db/schema.sql          ← 資料表結構（visits 訪客＋articles 文章＋media 圖片＋pages 自訂頁面＋menu 選單＋settings 設定）
 ├─ lib/                   ← Functions 共用程式（部署時自動打包，不會上網）
 │  ├─ site.js             ← 頁面外殼（pageShell）、管理頁共用樣式（ADMIN_CSS）、站長驗證、共用工具；
 │  │                         DEFAULT_MENU 預設選單、getChrome 讀選單/站名、SLUG_RE 頁面代稱規則
 │  ├─ pages.js            ← 新聞/文章「列表頁與文章頁」的實際內容（antutu 式排版、SEO 標籤）
-│  ├─ apidoc.js           ← API 文件的 Markdown 原稿（單一來源；改 API 記得同步改這裡＋agent skill）
+│  ├─ apidoc.js           ← ⚠ 自動產生（node tools/build-apidoc.mjs），不要手改；原稿是 API.md
 │  └─ vendor/marked.mjs   ← Markdown 轉 HTML 函式庫（marked 18.0.5，已內建免安裝）
 ├─ functions/             ← Cloudflare Pages Functions（伺服端程式）
 │  ├─ _middleware.js      ← 每次頁面瀏覽 → 寫一筆到 D1（不記 /api*、/logs、/admin、/img）
@@ -141,15 +144,18 @@ DELETE FROM visits WHERE ts < datetime('now', '-180 days');
   或 `PUT /api/admin/menu` 加一條 `url:"/p/<slug>"`。
 - 目前只有 API 能建立與編輯（網頁後台沒做頁面編輯器）；詳細範例見 /api-docs 或 agent skill。
 
-## API（全功能都有；文件見 /api-docs）
+## API（全功能都有；文件在 API.md）
 
-**完整 API 文件在 <https://uaip.cc.cd/api-docs>**（要管理金鑰才看得到內容；原稿在 `lib/apidoc.js`，
-**改任何 API 記得同步更新它＋`.claude/skills/uaip-api/SKILL.md`**）。涵蓋：公開 API（whoami、
-已發佈文章/頁面列表與單篇、選單、站名）＋站長 API（文章與自訂頁面增刪改查、圖片上傳、
-選單覆蓋、站名、訪客紀錄）。
+**完整 API 文件＝專案根目錄的 [API.md](./API.md)**（GitHub 直接可讀）。線上版
+<https://uaip.cc.cd/api-docs>（要管理金鑰）顯示的就是同一份 — 改 API.md 後跑
+`node tools/build-apidoc.mjs` 重新產生 `lib/apidoc.js` 再部署（apidoc.js 是自動產生的，別手改）。
+涵蓋：公開 API（whoami、已發佈文章/頁面列表與單篇、選單、站名）＋站長 API（文章與自訂頁面
+增刪改查、圖片上傳、選單覆蓋、站名、訪客紀錄）。
 
-**要交給 AI agent 操作時**：agent 用 Claude Code 開這個專案就會自動載入
-`.claude/skills/uaip-api/SKILL.md`（操作指南＋鐵則＋常用流程）；金鑰請 agent 讀這份 ADMIN.md。
+**要交給 AI agent 操作時**：請 agent 讀根目錄 **[AGENTS.md](./AGENTS.md)**（操作指南＋鐵則＋
+可照抄流程＋驗證清單）；用 Claude Code 開專案會透過 `.claude/skills/uaip-api` 自動導向同一份。
+金鑰請 agent 讀這份 ADMIN.md（上面「管理金鑰」段落）。
+**改任何 API 的同步清單**：`API.md` → 跑 build 腳本 → 必要時 `AGENTS.md` 的流程範例。
 
 所有 `/api/admin/*` 與 `/api/logs` 都要帶標頭 `Authorization: Bearer <管理金鑰>`（上面那把 LOGS_TOKEN）。
 最常用的「發文」長這樣：
