@@ -5,10 +5,5 @@
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
-# 訪客紀錄管理頁：不讓搜尋引擎收錄
-/logs
-  X-Robots-Tag: noindex
-
-# 文章管理後台：不讓搜尋引擎收錄
-/admin
-  X-Robots-Tag: noindex
+# /logs、/admin 已改由 Functions 輸出（2026-07-09 起與全站共用外殼），
+# _headers 只作用在靜態檔，所以它們的 noindex 改由頁面本身的 meta robots 處理。

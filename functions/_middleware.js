@@ -12,9 +12,10 @@ function shouldLog(request, url) {
   const purpose = (request.headers.get("sec-purpose") || request.headers.get("purpose") || "").toLowerCase();
   if (purpose.indexOf("prefetch") >= 0 || purpose.indexOf("preview") >= 0) return false;
   // 一般瀏覽器會帶 Accept: text/html；沒帶 Accept 直接打頁面路徑的（多半是機器人）也記下來
-  // 文章頁（/news/12、/articles/34）路徑是動態的，用樣式比對
+  // 文章頁（/news/12、/articles/34）與自訂頁面（/p/about）路徑是動態的，用樣式比對
   const accept = request.headers.get("accept") || "";
-  return accept.indexOf("text/html") >= 0 || PAGE_PATHS[p] === 1 || /^\/(news|articles)\/\d+$/.test(p);
+  return accept.indexOf("text/html") >= 0 || PAGE_PATHS[p] === 1 ||
+    /^\/(news|articles)\/\d+$/.test(p) || /^\/p\/[a-z0-9-]+$/.test(p);
 }
 
 async function logVisit(request, env, url) {

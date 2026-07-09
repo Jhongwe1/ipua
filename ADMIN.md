@@ -6,20 +6,25 @@
 ipua/
 ├─ wrangler.toml          ← Pages 設定：專案名、輸出資料夾、D1 綁定
 ├─ ADMIN.md               ← 這份筆記
-├─ db/schema.sql          ← 資料表結構（visits 訪客＋articles 文章＋media 圖片＋menu 選單＋settings 設定）
+├─ .claude/skills/uaip-api/SKILL.md ← 給 AI agent 的網站操作指南（Claude Code 會自動載入）
+├─ db/schema.sql          ← 資料表結構（visits 訪客＋articles 文章＋media 圖片＋pages 自訂頁面＋menu 選單＋settings 設定）
 ├─ lib/                   ← Functions 共用程式（部署時自動打包，不會上網）
-│  ├─ site.js             ← 頁面外殼、站長驗證、共用工具；DEFAULT_MENU 預設選單、getChrome 讀選單/站名
-│  ├─ pages.js            ← 列表頁與文章頁的實際內容（antutu 式排版、SEO 標籤）
-│  ├─ apidoc.js           ← API 文件的 Markdown 原稿（單一來源；改 API 記得同步改這裡）
+│  ├─ site.js             ← 頁面外殼（pageShell）、管理頁共用樣式（ADMIN_CSS）、站長驗證、共用工具；
+│  │                         DEFAULT_MENU 預設選單、getChrome 讀選單/站名、SLUG_RE 頁面代稱規則
+│  ├─ pages.js            ← 新聞/文章「列表頁與文章頁」的實際內容（antutu 式排版、SEO 標籤）
+│  ├─ apidoc.js           ← API 文件的 Markdown 原稿（單一來源；改 API 記得同步改這裡＋agent skill）
 │  └─ vendor/marked.mjs   ← Markdown 轉 HTML 函式庫（marked 18.0.5，已內建免安裝）
 ├─ functions/             ← Cloudflare Pages Functions（伺服端程式）
 │  ├─ _middleware.js      ← 每次頁面瀏覽 → 寫一筆到 D1（不記 /api*、/logs、/admin、/img）
+│  ├─ logs.js             ← GET /logs 訪客紀錄管理頁（2026-07-09 起用共用外殼；行為在 assets/logs.js）
+│  ├─ admin.js            ← GET /admin 文章管理後台（同上；行為在 assets/admin.js；支援 ?edit=、?new=）
 │  ├─ news/index.js       ← GET /news 新聞列表（?p=2 換頁）
 │  ├─ news/[id].js        ← GET /news/12 單篇新聞
 │  ├─ articles/…          ← GET /articles、/articles/34（同上，文章分類）
+│  ├─ p/[slug].js         ← GET /p/about 自訂頁面（內容存 pages 表，用 API 建立）
 │  ├─ img/[id].js         ← GET /img/5 從 D1 讀圖（邊緣快取）
 │  ├─ feed.js             ← GET /feed RSS 訂閱源
-│  ├─ sitemap.js          ← GET /sitemap 給搜尋引擎的網址清單
+│  ├─ sitemap.js          ← GET /sitemap 給搜尋引擎的網址清單（含文章與自訂頁面）
 │  ├─ api-docs.js         ← GET /api-docs API 文件頁（金鑰閘門，站長才看得到內容）
 │  └─ api/
 │     ├─ whoami.js        ← GET /api/whoami（回報訪客自己的資訊）
@@ -27,16 +32,17 @@ ipua/
 │     ├─ menu.js          ← GET /api/menu（公開：側邊欄選單；表空回預設）
 │     ├─ settings.js      ← GET /api/settings（公開：站名）
 │     ├─ articles/        ← GET /api/articles、/api/articles/12（公開：只回已發佈）
-│     └─ admin/           ← 站長 API（都要金鑰）：articles 增刪改查、media 上傳、
+│     ├─ pages/           ← GET /api/pages、/api/pages/about（公開：只回已發佈）
+│     └─ admin/           ← 站長 API（都要金鑰）：articles、pages 增刪改查、media 上傳、
 │                            menu 覆蓋選單、settings 改站名、apidoc 取 API 文件
 └─ public/                ← 真正上網的檔案（只有這個資料夾會部署）
    ├─ index.html          ← 主站（☰ 側邊欄；選單由 /api/menu 動態載入）
-   ├─ logs.html           ← /logs 訪客紀錄管理頁
-   ├─ admin.html          ← /admin 文章管理後台（支援 ?edit=編號、?new=分類 直達）
+   ├─ assets/logs.js      ← /logs 的頁面行為（外殼由 functions/logs.js 輸出）
+   ├─ assets/admin.js     ← /admin 的頁面行為（外殼由 functions/admin.js 輸出）
    ├─ assets/marked.js    ← 後台/文件頁渲染 Markdown（與 lib/vendor 同版本 18.0.5）
    ├─ assets/adminbar.js  ← ✎ 編輯模式（只有登入過的裝置會載入；見「編輯模式」章節）
    ├─ robots.txt          ← 爬蟲規則＋sitemap 位置
-   ├─ _headers            ← 回應標頭設定（/logs、/admin 皆 noindex）
+   ├─ _headers            ← 靜態檔回應標頭（管理頁的 noindex 已改由頁面 meta 處理）
    └─ _redirects          ← （空）SPA 路由說明
 ```
 
@@ -122,11 +128,28 @@ DELETE FROM visits WHERE ts < datetime('now', '-180 days');
 - 選單連結網址限「/開頭」或「http(s)://」；分類（section）是不能點的小標題，用來分組。
 - 主站的 IP 查詢/UA 查詢連結（/ip、/ua）保持前端切換不重新載入；側邊欄「站長區」不在選單資料裡，是 adminbar 動態長的，編輯器裡看不到也不用管。
 
+## 自訂頁面（/p/網址代稱）— 2026-07-09 上線
+
+**用 API 就能幫網站開新頁面（新連結）**，不用改程式、不用部署。內容存 D1 `pages` 表，
+公開網址 `/p/<slug>`（例 `/p/about`），外殼與文章頁同一套（側邊欄、日夜、SEO 標籤）。
+
+- 建立：`POST /api/admin/pages`，本體 `{ slug, title, summary, body_md, status }`；
+  slug 只能小寫英數與連字號、重複回 409；`status:"draft"` 對外看不到。
+- 讀改刪：`GET/PUT/DELETE /api/admin/pages/<編號或slug>`；PUT 一樣**整包覆蓋**、可改 slug（＝搬網址）。
+- 公開讀取：`GET /api/pages`、`GET /api/pages/<slug>`（只回已發佈）。
+- 發佈後自動進 `/sitemap`；**不會自動進側邊欄** — 要入口就 ✎ →「編輯選單」加連結，
+  或 `PUT /api/admin/menu` 加一條 `url:"/p/<slug>"`。
+- 目前只有 API 能建立與編輯（網頁後台沒做頁面編輯器）；詳細範例見 /api-docs 或 agent skill。
+
 ## API（全功能都有；文件見 /api-docs）
 
 **完整 API 文件在 <https://uaip.cc.cd/api-docs>**（要管理金鑰才看得到內容；原稿在 `lib/apidoc.js`，
-**改任何 API 記得同步更新它**）。涵蓋：公開 API（whoami、已發佈文章列表/單篇、選單、站名）＋
-站長 API（文章增刪改查、圖片上傳、選單覆蓋、站名、訪客紀錄）。
+**改任何 API 記得同步更新它＋`.claude/skills/uaip-api/SKILL.md`**）。涵蓋：公開 API（whoami、
+已發佈文章/頁面列表與單篇、選單、站名）＋站長 API（文章與自訂頁面增刪改查、圖片上傳、
+選單覆蓋、站名、訪客紀錄）。
+
+**要交給 AI agent 操作時**：agent 用 Claude Code 開這個專案就會自動載入
+`.claude/skills/uaip-api/SKILL.md`（操作指南＋鐵則＋常用流程）；金鑰請 agent 讀這份 ADMIN.md。
 
 所有 `/api/admin/*` 與 `/api/logs` 都要帶標頭 `Authorization: Bearer <管理金鑰>`（上面那把 LOGS_TOKEN）。
 最常用的「發文」長這樣：
@@ -185,7 +208,9 @@ npx wrangler pages dev                                           # http://localh
 - **☾ 夜間**＝黑底
 - **🌓 自動**＝依訪客所在地的日夜自動切換（白天用 IP 定位算太陽高度，未定位前用裝置時鐘 6–18 點當白天）
 
-四個頁面（主站、新聞/文章、/logs、/admin）共用同一套與同一個記憶鍵。要改預設或圖示：主站在 `public/index.html`、內容頁在 `lib/site.js` 的 SHELL_JS、另兩頁各自 html 內，**四處要一起改**。
+全站共用同一套與同一個記憶鍵。要改預設或圖示只有**兩處**：主站在 `public/index.html`、
+其他所有頁面（新聞/文章、/p/頁面、/logs、/admin、/api-docs）都吃 `lib/site.js` 的 SHELL_JS，
+**兩處要一起改**（2026-07-09 起 /logs、/admin 改用共用外殼，不再各養一份）。
 
 ## 側邊欄
 

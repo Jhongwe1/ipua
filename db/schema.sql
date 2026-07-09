@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS menu (
   url      TEXT NOT NULL DEFAULT ''      -- 連結網址（section 留空；限 / 開頭或 http(s)://）
 );
 
+-- 自訂頁面（2026-07-09 上線）：站長／agent 用 API 就能開新頁面，公開網址 /p/<slug>。
+-- 例：slug='about' → https://uaip.cc.cd/p/about。想放進側邊欄 → PUT /api/admin/menu 加連結。
+-- 寫入走 /api/admin/pages（CRUD）；公開讀取走 /api/pages。draft（草稿）對外看不到。
+CREATE TABLE IF NOT EXISTS pages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug       TEXT NOT NULL UNIQUE,           -- 網址代稱：小寫英數與連字號，例 about、privacy-policy
+  title      TEXT NOT NULL,
+  summary    TEXT NOT NULL DEFAULT '',       -- meta description（SEO／分享卡描述）
+  body_md    TEXT NOT NULL DEFAULT '',       -- 內文（Markdown 原稿；顯示時由伺服器轉 HTML）
+  status     TEXT NOT NULL DEFAULT 'draft',  -- 'draft'（草稿）或 'published'（已發佈）
+  created_at TEXT NOT NULL,                  -- UTC ISO
+  updated_at TEXT NOT NULL
+);
+
 -- 網站設定（key-value）：目前只有 brand（站名）。表空或沒該鍵時用程式內建預設。
 -- 寫入走 PUT /api/admin/settings。
 CREATE TABLE IF NOT EXISTS settings (
