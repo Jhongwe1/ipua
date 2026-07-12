@@ -16,7 +16,7 @@
 | 看流量 | `GET /api/logs` |
 | 核准／管理會員 | `GET /api/admin/users`、`PUT /api/admin/users/{id} {"action":"approve"}` |
 | 加／改 API 中轉管道 | `POST/PUT/DELETE /api/admin/relay/channels…` |
-| 設 VPN 訂閱來源 | `PUT /api/admin/vpn {"source_url":"…"}` 或 `{"node_links":"…"}` |
+| 加／改 VPN 渠道 | `POST/PUT/DELETE /api/admin/vpn/channels…` |
 
 只有「改程式或版型」才需要動這個 repo 並部署（見文末）。
 

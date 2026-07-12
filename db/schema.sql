@@ -77,8 +77,8 @@ CREATE TABLE IF NOT EXISTS pages (
   updated_at TEXT NOT NULL
 );
 
--- 網站設定（key-value）：brand（站名）、vpn_source（VPN 上游訂閱網址）。表空或沒該鍵時用程式內建預設。
--- 寫入走 PUT /api/admin/settings（brand）與 PUT /api/admin/vpn（vpn_source）。
+-- 網站設定（key-value）：brand（站名）。表空或沒該鍵時用程式內建預設。
+-- 寫入走 PUT /api/admin/settings（brand）。（VPN 來源 2026-07-12 起搬到 vpn_channels 表。）
 CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
@@ -116,6 +116,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions (expires_at);
+
+-- VPN 訂閱的上游渠道（2026-07-12 多渠道化，取代舊 settings 的 vpn_source/vpn_nodes）：
+-- 站長在 /vpn 管理，會員的 /vpn/sub/<token> 會把「所有啟用中渠道」的節點合併送出，
+-- 會員看不到渠道存在與上游網址。kind='sub' 是機場訂閱網址、'nodes' 是手動貼的節點清單。
+CREATE TABLE IF NOT EXISTS vpn_channels (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,                  -- 顯示名稱（只有站長看得到，例：某機場 3 元月付）
+  kind       TEXT NOT NULL DEFAULT 'sub',    -- 'sub'（上游訂閱網址）或 'nodes'（手動節點）
+  url        TEXT NOT NULL DEFAULT '',       -- kind='sub' 用：上游訂閱網址（站長 API 回讀一律遮罩）
+  nodes      TEXT NOT NULL DEFAULT '',       -- kind='nodes' 用：一行一條 vmess:// vless:// …
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
 
 -- API 中轉站的上游管道（2026-07-11）：站長在 /relay 管理。會員打 /relay/<slug>/...，
 -- 伺服器把驗證換成這裡存的上游金鑰後轉發。kind 決定上游收金鑰的方式：

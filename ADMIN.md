@@ -238,7 +238,7 @@ menu 表空＝用內建預設（lib/site.js 的 DEFAULT_MENU；index.html 也留
 - `users`：會員（google_sub、email、status=pending/approved/blocked、is_admin、api_key_hash＝中轉金鑰的 SHA-256、vpn_token＝訂閱代碼、用量）。
 - `sessions`：登入狀態（cookie `ipua_sess` 存的是 SHA-256）。
 - `relay_channels`：中轉上游管道（slug、kind、base_url、api_key）。
-- VPN 來源存在 `settings`：`vpn_source`（上游訂閱網址）、`vpn_nodes`（手動節點）。
+- `vpn_channels`：VPN 上游渠道（name、kind=sub/nodes、url、nodes、enabled）。2026-07-12 起多渠道，取代舊的 settings.vpn_source。
 
 ### 要設的環境變數（secrets）
 ```
@@ -265,9 +265,26 @@ printf '你的CLIENT_SECRET' | npx wrangler pages secret put GOOGLE_CLIENT_SECRE
 
 ### 日常操作
 - **核准會員**：/members 頁（站長）→ 待核准清單按「核准」。或 API：`PUT /api/admin/users/{id} {"action":"approve"}`。
-- **加中轉管道**：/relay 頁（站長）「管道管理」→ 新增，填上游 base_url 與該平台的 API Key。之後會員用自己的 `uak-` 金鑰 + Base URL `https://uaip.cc.cd/relay/<slug>` 就能打。
-- **設 VPN 來源**：/vpn 頁（站長）→ 貼上游訂閱網址或手動節點。會員在 /vpn 拿到專屬 `/vpn/sub/<token>` 訂閱網址。
+- **加中轉管道**：/relay 頁（站長）「管道管理」→ 新增，填上游 base_url 與該平台的 API Key。之後會員用自己的 `uak-` 金鑰 + Base URL `https://uaip.cc.cd/relay/<slug>` 就能打。**每找到一個便宜渠道就加一個**（各自的 base_url 與金鑰），暫時不想用就按「停用」（留著不刪）。
+- **加 VPN 渠道**：/vpn 頁（站長）「渠道管理」→ 新增，貼機場訂閱網址（kind=sub）或自己的節點連結（kind=nodes）。**會員的訂閱網址永遠是同一條**，伺服器自動把所有啟用中渠道的節點合併給他們。
 - 護欄：站長不能在網頁上封鎖／刪除自己，也動不了 ADMIN_EMAILS 指定的帳號（要改就改環境變數）。
+
+### 兩個「中轉」的運作方式（2026-07-12 完成）
+
+核心概念一樣：**站長保管真正的上游（網址＋金鑰），會員只拿到一把我方發的憑證**，所有流量經 Cloudflare 轉一手，會員看不到也偷不走上游。
+
+| | API 中轉站 /relay | VPN /vpn |
+|---|---|---|
+| 站長新增的東西 | 管道：base_url ＋ 該平台 API Key ＋ slug | 渠道：機場訂閱網址，或手動節點清單 |
+| 會員拿到的憑證 | 自己的 `uak-` 金鑰（在 /relay 按「產生」） | 自己的 `/vpn/sub/<token>` 訂閱網址 |
+| 會員怎麼用 | Base URL 換成 `https://uaip.cc.cd/relay/<slug>`、API Key 填 `uak-…` | 訂閱網址貼進 Clash／v2rayN／Shadowrocket |
+| 會員看得到什麼 | 管道的**名稱**與類型（挑要用哪個），看不到 base_url 與上游金鑰 | 只有節點，**完全看不到渠道與上游網址** |
+| 多渠道怎麼選 | 會員自己選：一個管道一個網址（`/relay/a`、`/relay/b`） | 不用選：所有啟用中渠道的節點自動合併去重成一份 |
+| 未核准的人 | 401／403（金鑰無效或帳號未核准） | 403（訂閱抓不到東西） |
+
+- **VPN 多渠道的格式眉角**：只啟用「一個」訂閱渠道時＝原樣轉發（機場的 Clash YAML、流量／到期資訊都保留）；啟用「兩個以上」時，伺服器改抓 base64 節點清單合併（Clash YAML 沒法安全合併會被略過，流量資訊也無法合併）。想保留流量顯示就只開那一個機場。
+- 會員的用量（`relay_calls` 中轉次數、`vpn_pulls` 訂閱抓取次數）在 /members 頁看得到。
+- 上游金鑰／訂閱網址在站長 API 回讀時一律**遮罩**（只回開頭…結尾），要換就直接重填；編輯時該欄留空＝保留舊值。
 
 ## 廣告計畫
 

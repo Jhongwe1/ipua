@@ -103,8 +103,10 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `POST /api/admin/relay/channels` | 新增中轉管道 |
 | `PUT /api/admin/relay/channels/{id}` | 更新管道（整包覆蓋；沒帶 api_key＝保留舊金鑰） |
 | `DELETE /api/admin/relay/channels/{id}` | 刪除管道 |
-| `GET /api/admin/vpn` | 讀 VPN 訂閱來源設定（上游網址遮罩） |
-| `PUT /api/admin/vpn` | 設 VPN 上游訂閱網址與手動節點 |
+| `GET /api/admin/vpn/channels` | 全部 VPN 渠道（上游訂閱網址遮罩） |
+| `POST /api/admin/vpn/channels` | 新增 VPN 渠道（機場訂閱或手動節點） |
+| `PUT /api/admin/vpn/channels/{id}` | 更新渠道（整包覆蓋；沒帶 url＝保留舊網址） |
+| `DELETE /api/admin/vpn/channels/{id}` | 刪除渠道 |
 
 ## 3. 三條鐵則（先讀這個再動手）
 
@@ -303,16 +305,34 @@ Authorization: Bearer uak-你的金鑰
 - 路徑照上游原本的填（中轉只換金鑰不改路徑）；回應串流直通。
 - 未帶金鑰 401、金鑰無效 401、帳號未核准 403、管道不存在或停用 404、上游連不上 502。
 
-## 5e. VPN 訂閱
+## 5e. VPN 訂閱（多渠道）
 
-**站長設來源**（存 `settings` 表）：`PUT /api/admin/vpn`，本體 `{ source_url?, node_links? }`：
+跟中轉站同一個模式：站長到處找便宜機場／自架節點，**每找到一個就加一個渠道**；會員永遠只有一條訂閱網址，伺服器把所有「啟用中」渠道的節點合併給他，**會員看不到渠道存在，也看不到上游網址**。
 
-- `source_url`：上游訂閱網址（機場／自建）。會員訂閱時伺服器抓它、邊緣快取 5 分鐘後轉發，並透傳流量／到期資訊（Subscription-Userinfo）。
-- `node_links`：手動節點，一行一條（`vmess://`、`vless://`…）。
-- 欄位缺席＝不動；空字串＝清掉。兩者可只填一個；都空＝關閉訂閱功能。
-- `GET /api/admin/vpn` → `{ has_source, source_hint, node_count, node_links }`。
+**站長設渠道**（存 `vpn_channels` 表）：`POST /api/admin/vpn/channels`，本體：
 
-**會員使用**：`GET /vpn/sub/{token}`（token＝會員的 `vpn_token`，等於通行證）。把這網址加進 Clash／v2rayN 的訂閱即可，App 會自動定時更新。未核准／被封鎖的 token → 403。上游是標準 base64 訂閱時，手動節點會解碼附加後重新編碼；上游是 Clash YAML 等其他格式則原樣透傳。
+| 欄位 | 規則 |
+|---|---|
+| `name` | **必填** 顯示名稱（只有站長看得到，例「某機場 月付3元」） |
+| `kind` | `sub`（機場給的訂閱網址，預設）或 `nodes`（自己貼的節點連結） |
+| `url` | `kind=sub` **必填**：上游訂閱網址（回讀一律遮罩） |
+| `nodes` | `kind=nodes` **必填**：一行一條 `vmess://`／`vless://`／`trojan://`… |
+| `enabled` | 預設 true；false＝暫時不併進會員訂閱（渠道還留著） |
+
+- `PUT /api/admin/vpn/channels/{id}` 整包覆蓋；**本體沒帶 `url` 欄位＝保留舊網址**（帶空字串＝清掉）。
+- `GET /api/admin/vpn/channels` → `{ rows }`，每筆 `id`、`name`、`kind`、`enabled`、`has_url`、`url_hint`（遮罩）、`nodes`、`node_count`。
+
+**會員使用**：`GET /vpn/sub/{token}`（token＝會員的 `vpn_token`，等於通行證，免登入方便 App 定時抓）。把這網址加進 Clash／v2rayN／Shadowrocket 的訂閱即可。未核准／被封鎖 → 403。
+
+伺服器依渠道數自動選最相容的合併方式：
+
+| 啟用中的渠道 | 回給會員的內容 |
+|---|---|
+| 只有 `nodes` 渠道 | 全部手動節點，合併去重 → 標準 base64 訂閱 |
+| 恰好 1 個 `sub` 渠道 | **原樣轉發**（透傳會員 App 的 UA，所以機場回 Clash YAML 也沒問題；流量／到期資訊 Subscription-Userinfo 照傳）。上游若是 base64，手動節點會解碼附加後重新編碼 |
+| 2 個以上 `sub` 渠道 | 各渠道用 v2rayN UA 並行抓取（邊緣快取 5 分鐘）→ 解碼 → 全部節點＋手動節點合併去重 → 一份 base64 訂閱。解不開的（Clash YAML）略過；多渠道時流量資訊無法合併，不回傳 |
+
+> 想同時吃多個機場又要保留流量顯示，就只啟用那一個機場的渠道；其餘用 `enabled:false` 暫存。
 
 ## 6. 常用流程速查
 
@@ -327,7 +347,8 @@ Authorization: Bearer uak-你的金鑰
 | 看流量 | GET /api/logs?limit=50&since=今天零點的UTC時間 |
 | 加中轉管道 | POST /api/admin/relay/channels `{ slug, name, kind, base_url, api_key }` |
 | 核准會員 | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
-| 設 VPN 來源 | PUT /api/admin/vpn `{ "source_url":"https://…" }` 或 `{ "node_links":"vless://…" }` |
+| 加 VPN 渠道 | POST /api/admin/vpn/channels `{ "name":"某機場", "kind":"sub", "url":"https://…" }` |
+| 暫停某渠道 | GET /api/admin/vpn/channels 找 id → PUT `{ name, kind, enabled:false }`（會員訂閱立刻少掉那些節點） |
 
 轉貼別站新聞的原則：**用自己的話改寫＋文末附資料來源連結**，不要整篇照抄。
 這些操作在網頁上也都能做：文章後台 /admin、☰ 側邊欄「站長」區（改選單、改站名、成員管理）、訪客紀錄 /logs、中轉站 /relay、VPN /vpn（自訂頁面目前只有 API）。
