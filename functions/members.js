@@ -66,7 +66,7 @@ const MEMBERS_JS = `
     if(!me){MU.gateLogin(root,tx("成員管理","Members"),tx("這一頁只有站長能看，請先登入。","Owner only. Please sign in."));return;}
     if(!me.is_admin){
       root.innerHTML="";root.appendChild(MU.acctCard(me));
-      var g=el("div","gate");g.appendChild(el("div","big","\\uD83D\\uDEAB"));
+      var g=el("div","gate");
       g.appendChild(el("h2",null,tx("僅限站長","Owner only")));
       g.appendChild(el("p",null,tx("這一頁只有站長能看。","This page is for the site owner only.")));
       root.appendChild(g);return;
