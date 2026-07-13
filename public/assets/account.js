@@ -100,8 +100,8 @@
     panel.appendChild(el("div", "acct-hr"));
 
     // 純文字項目，不加前綴小圖示（站長 2026-07-14 要求全站拿掉這類裝飾）
+    // 項目清單以站長指定為準，不要擅自加（LLM playground 曾被加過又被要求移除）
     function link(text, href) { var a = el("a", "acct-item", text); a.href = href; panel.appendChild(a); }
-    link(tx("LLM playground", "LLM playground"), "/playground");
     link(tx("API 中轉站", "API relay"), "/relay");
     link(tx("VPN", "VPN"), "/vpn");
     if (me.is_admin) {
