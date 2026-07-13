@@ -362,7 +362,7 @@ Authorization: Bearer uak-你的金鑰
 上游金鑰全程留在伺服器，會員只帶登入 cookie。對話存 D1、綁帳號、跨裝置同步。
 驗證：登入 cookie（要有 `playground` 服務）**或** `Authorization: Bearer <管理金鑰>`（以站長帳號的身分操作，方便 curl／agent 測試）。
 
-- `GET /api/playground/models` → `{ rows:[{ slug, name, kind, models }] }`（只列啟用中且有設模型的渠道）。
+- `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
 - `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。
 - `GET /api/playground/conversations/{id}` → `{ conv, messages:[{ id, role, content, model, created_at }] }`。
 - `PUT /api/playground/conversations/{id}` 本體 `{ "title":"新名字" }` 改名；`DELETE` 刪除（連同訊息）。
@@ -379,6 +379,7 @@ Authorization: Bearer uak-你的金鑰
   - 回應是 SSE（`text/event-stream`），每筆 `data:` 都是 JSON：`{conv,title?}` →（多筆）`{d:"增量文字"}` → `{done:true}`；中途出錯是 `{error,hint}`（已生成的部分照存）。上游一開始就失敗則直接回 JSON 錯誤（會帶 `conv`）。
   - 中斷連線（前端按「停止」）＝停止生成，已生成的內容照樣存進對話。
   - 伺服器依渠道 kind 自動轉換請求／串流格式：openai、custom → `/v1/chat/completions`；anthropic → `/v1/messages`；gemini → `/v1beta/models/{model}:streamGenerateContent?alt=sse`。
+  - **錯誤訊息對會員做了消毒**（2026-07-14）：上游的原始錯誤內容（錯誤格式、文件連結、專案編號）會洩漏真實提供商身分，所以會員只看得到安全分類字（401/403→「渠道憑證可能失效」、429→「上游流量限制」、5xx→「上游暫時故障」…），`detail` 原文**只有站長**（is_admin 或管理金鑰）看得到。
 
 ## 6. 常用流程速查
 

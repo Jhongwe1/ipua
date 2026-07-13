@@ -12,7 +12,17 @@
 //   { done: true }     結束
 // 上游一開始就失敗時不進 SSE，直接回 JSON 錯誤（body 會帶 conv，前端才不會重複開對話）。
 import { json } from "../../../lib/site.js";
+import { isAdminUser } from "../../../lib/auth.js";
 import { pgUser, cleanChat, buildUpstream, extractDelta, extractFull, chModels } from "../../../lib/playground.js";
+
+// 會員看的上游錯誤一律用「安全分類字」— 上游的原始錯誤內容（格式、文件連結、專案編號）
+// 會洩漏真實提供商身分，只有站長能看原文（除錯用）。
+function safeHint(status) {
+  if (status === 401 || status === 403) return "渠道憑證可能失效，請聯絡站長";
+  if (status === 429) return "上游流量限制，請稍後再試";
+  if (status >= 500) return "上游暫時故障，請稍後再試";
+  return "上游回應異常（HTTP " + status + "）";
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -21,6 +31,7 @@ export async function onRequestPost(context) {
   const who = await pgUser(request, env, url);
   if (who.err) return who.err;
   const user = who.user;
+  const isAdm = isAdminUser(user, env);
 
   let body = null;
   try { body = await request.json(); } catch (e) {}
@@ -65,10 +76,12 @@ export async function onRequestPost(context) {
   try {
     resp = await fetch(up.url, { method: "POST", headers: up.headers, body: up.body });
   } catch (e) {
+    // fetch 例外訊息可能含主機名 → 只有站長看得到
     return json({ error: "upstream-unreachable", hint: "連不上上游（" + ch.name + "）", conv: convId,
-                  detail: String(e && e.message || e) }, 502);
+                  detail: isAdm ? String(e && e.message || e) : undefined }, 502);
   }
   if (!resp.ok) {
+    if (!isAdm) return json({ error: "upstream-error", hint: safeHint(resp.status), conv: convId }, 502);
     const detail = String(await resp.text().catch(function () { return ""; })).slice(0, 2000);
     return json({ error: "upstream-error", hint: "上游回應 " + resp.status, conv: convId, detail: detail }, 502);
   }
@@ -139,7 +152,8 @@ export async function onRequestPost(context) {
       ).bind(t2, v.channel, v.model, convId));
       await env.DB.batch(stmts);
     } catch (e) {}
-    if (errMsg) await send({ error: "upstream-error", hint: errMsg });
+    // 串流中途的錯誤訊息是上游原文（會露出提供商身分）→ 會員只看安全字，站長看原文
+    if (errMsg) await send({ error: "upstream-error", hint: isAdm ? errMsg : "上游發生錯誤，請稍後再試" });
     await send({ done: true });
     try { await writer.close(); } catch (e) {}
   })());

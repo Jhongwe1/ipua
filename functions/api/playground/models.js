@@ -10,10 +10,11 @@ export async function onRequestGet({ request, env }) {
   if (who.err) return who.err;
   try {
     const res = await env.DB.prepare(
-      "SELECT slug,name,kind,models FROM relay_channels WHERE enabled=1 ORDER BY id"
+      "SELECT slug,name,models FROM relay_channels WHERE enabled=1 ORDER BY id"
     ).all();
+    // 不回 kind：kind 等於標示真實提供商（openai/anthropic/gemini），Playground 前端也用不到
     const rows = (res.results || []).map(function (r) {
-      return { slug: r.slug, name: r.name, kind: r.kind, models: chModels(r) };
+      return { slug: r.slug, name: r.name, models: chModels(r) };
     }).filter(function (r) { return r.models.length; });
     return json({ rows: rows });
   } catch (e) {
