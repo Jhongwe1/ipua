@@ -84,16 +84,18 @@ CREATE TABLE IF NOT EXISTS settings (
   v TEXT NOT NULL
 );
 
--- 會員（2026-07-11 Google 登入上線）：任何人都能用 Google 登入，但 status 要站長核准（approved）
--- 之後，API 中轉與 VPN 訂閱才真的能用。站長信箱（lib/auth.js ADMIN_EMAILS_DEFAULT 或環境變數
--- ADMIN_EMAILS）第一次登入自動 approved＋is_admin=1。
+-- 會員（2026-07-11 Google 登入上線）：任何人都能用 Google 登入，但要站長批准之後服務才真的能用。
+-- 2026-07-13 起改「分服務批准」：services 存這個會員被批准的服務清單（逗號分隔，如 relay,vpn,playground），
+-- status 是帳號總開關（pending/approved/blocked）；站長（is_admin）不看 services、全部服務都能用。
+-- 站長信箱（lib/auth.js ADMIN_EMAILS_DEFAULT 或環境變數 ADMIN_EMAILS）第一次登入自動 approved＋is_admin=1。
 CREATE TABLE IF NOT EXISTS users (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   google_sub   TEXT NOT NULL UNIQUE,          -- Google 帳號的永久編號（本機測試登入是 dev:信箱）
   email        TEXT NOT NULL,
   name         TEXT NOT NULL DEFAULT '',
   picture      TEXT NOT NULL DEFAULT '',      -- Google 大頭貼網址
-  status       TEXT NOT NULL DEFAULT 'pending', -- pending（待核准）/ approved（已核准）/ blocked（封鎖）
+  status       TEXT NOT NULL DEFAULT 'pending', -- pending（待批准）/ approved（已批准）/ blocked（封鎖）
+  services     TEXT NOT NULL DEFAULT '',      -- 已批准的服務（逗號分隔）：relay / vpn / playground
   is_admin     INTEGER NOT NULL DEFAULT 0,
   api_key_hash TEXT NOT NULL DEFAULT '',      -- 會員 API 金鑰（uak-…）的 SHA-256；空字串＝還沒產生
   api_key_hint TEXT NOT NULL DEFAULT '',      -- 顯示用提示（開頭…結尾），明文金鑰不落地
@@ -140,6 +142,30 @@ CREATE TABLE IF NOT EXISTS relay_channels (
   kind       TEXT NOT NULL DEFAULT 'openai',  -- openai / anthropic / gemini / custom
   base_url   TEXT NOT NULL,                   -- 上游根網址，例 https://api.openai.com
   api_key    TEXT NOT NULL DEFAULT '',        -- 上游金鑰（只有站長 API 摸得到，回讀一律遮罩）
+  models     TEXT NOT NULL DEFAULT '',        -- 這個渠道可用的模型名稱（逗號分隔；2026-07-13 起新增渠道必填）
   enabled    INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
+
+-- LLM Playground（2026-07-13 上線）：會員在 /playground 網頁上直接試用中轉渠道裡的模型。
+-- 對話與訊息存 D1（綁帳號、跨裝置同步）；可用模型清單來自 relay_channels.models。
+CREATE TABLE IF NOT EXISTS pg_conversations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL,
+  title      TEXT NOT NULL DEFAULT '',        -- 自動取第一句話，會員可改名
+  channel    TEXT NOT NULL DEFAULT '',        -- 最後一次使用的渠道 slug
+  model      TEXT NOT NULL DEFAULT '',        -- 最後一次使用的模型名稱
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pgconv_user ON pg_conversations (user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS pg_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  conv_id    INTEGER NOT NULL,
+  role       TEXT NOT NULL,                   -- user / assistant
+  content    TEXT NOT NULL,
+  model      TEXT NOT NULL DEFAULT '',        -- 這則訊息當下用的模型
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pgmsg_conv ON pg_messages (conv_id, id);

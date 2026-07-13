@@ -13,6 +13,7 @@
 //                             ＋手動節點，去重後回一份 base64 訂閱（Clash YAML 沒法安全合併，
 //                             解不開的渠道略過）。多渠道時流量資訊無法合併，不回傳。
 // 上游抓取都掛邊緣快取 5 分鐘，會員再多也不會打爆機場。
+import { hasService } from "../../../lib/auth.js";
 
 function textResp(body, status, extraHeaders) {
   const h = Object.assign({
@@ -70,14 +71,14 @@ export async function onRequestGet(context) {
   if (!/^uvt[a-z2-7]{10,40}$/.test(token)) return textResp("invalid token", 404);
   if (!env.DB) return textResp("service unavailable", 503);
 
-  // 驗 token → 會員
+  // 驗 token → 會員（分服務批准：要有 vpn 服務才能訂閱）
   let user = null;
   try {
-    user = await env.DB.prepare("SELECT id,status,is_admin FROM users WHERE vpn_token=?1").bind(token).first();
+    user = await env.DB.prepare("SELECT id,email,status,services,is_admin FROM users WHERE vpn_token=?1").bind(token).first();
   } catch (e) {}
   if (!user) return textResp("invalid token", 404);
   if (user.status === "blocked") return textResp("account blocked", 403);
-  if (user.status !== "approved" && user.is_admin !== 1) return textResp("account not approved yet", 403);
+  if (!hasService(user, env, "vpn")) return textResp("account not approved yet", 403);
 
   // 啟用中的渠道
   let channels = [];

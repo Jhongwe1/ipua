@@ -26,8 +26,8 @@ export async function onRequestPut({ request, env, params }) {
     if (!old) return json({ error: "not-found" }, 404);
     const key = c.ch.api_key === undefined ? old.api_key : c.ch.api_key;
     await env.DB.prepare(
-      "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,enabled=?6 WHERE id=?7"
-    ).bind(c.ch.slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.enabled, id).run();
+      "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,models=?6,enabled=?7 WHERE id=?8"
+    ).bind(c.ch.slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.models, c.ch.enabled, id).run();
     const row = await env.DB.prepare("SELECT * FROM relay_channels WHERE id=?1").bind(id).first();
     return json({ row: maskRow(row) });
   } catch (e) {

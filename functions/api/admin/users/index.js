@@ -9,7 +9,7 @@ export async function onRequestGet({ request, env }) {
   if (!env.DB) return json({ error: "no-db" }, 500);
   try {
     const res = await env.DB.prepare(
-      "SELECT id,email,name,picture,status,is_admin,api_key_at,relay_calls,vpn_pulls,created_at,last_login " +
+      "SELECT id,email,name,picture,status,services,is_admin,api_key_at,relay_calls,vpn_pulls,created_at,last_login " +
       "FROM users ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, last_login DESC"
     ).all();
     return json({ rows: res.results || [] });

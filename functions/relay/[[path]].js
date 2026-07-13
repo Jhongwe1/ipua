@@ -8,7 +8,7 @@
 //   Authorization: Bearer（OpenAI 系）、x-api-key（Anthropic）、x-goog-api-key／?key=（Gemini）
 // 只有「已核准」的帳號能用；封鎖／待核准會拿到 403。
 import { json } from "../../lib/site.js";
-import { memberKeyFrom, userFromKey, isApproved } from "../../lib/auth.js";
+import { memberKeyFrom, userFromKey, hasService } from "../../lib/auth.js";
 import { relayPageResponse } from "../../lib/relaypage.js";
 
 // 不轉發給上游的標頭：連線層的、Cloudflare 加的、還有夾帶會員身分的
@@ -47,8 +47,8 @@ export async function onRequest(context) {
   if (!key) return json({ error: "no-key", hint: "請帶你的會員金鑰（uak-…），金鑰在 /relay 頁面產生" }, 401);
   const user = await userFromKey(env, key);
   if (!user) return json({ error: "bad-key", hint: "金鑰無效或已被重新產生 — 到 /relay 看看目前這把" }, 401);
-  if (!isApproved(user, env)) {
-    return json({ error: "not-approved", hint: "帳號還沒被站長核准，核准後金鑰才會生效" }, 403);
+  if (!hasService(user, env, "relay")) {
+    return json({ error: "not-approved", hint: "帳號還沒被站長批准使用中轉站，批准後金鑰才會生效" }, 403);
   }
 
   // 2) 找管道

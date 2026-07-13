@@ -62,11 +62,15 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 
 | 方法與路徑 | 用途 |
 |---|---|
-| `GET /api/me` | 我是誰（登入狀態、核准狀態、是否站長；未登入回 `{user:null}`） |
+| `GET /api/me` | 我是誰（登入狀態、被批准的服務清單 `services`、是否站長；未登入回 `{user:null}`） |
 | `POST /api/account/key` | 產生／重生自己的中轉金鑰 `uak-…`（明文只回一次） |
 | `DELETE /api/account/key` | 撤銷自己的中轉金鑰 |
 | `POST /api/account/vpn-token` | 重生自己的 VPN 訂閱代碼（舊訂閱網址立即失效） |
-| `GET /api/relay/channels` | 目前可用的中轉管道清單（不含金鑰） |
+| `GET /api/relay/channels` | 目前可用的中轉管道清單（含各管道的模型名稱 `models`；不含金鑰） |
+| `GET /api/playground/models` | Playground 可選的模型清單（依渠道分組；要有 playground 服務） |
+| `POST /api/playground/chat` | Playground 聊天（SSE 串流；要有 playground 服務，見 §5f） |
+| `GET /api/playground/conversations` | 自己的 Playground 對話列表 |
+| `GET/PUT/DELETE /api/playground/conversations/{id}` | 讀取訊息／改名／刪除自己的對話 |
 
 ### 會員服務端點（不同驗證）
 
@@ -96,8 +100,8 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `PUT /api/admin/settings` | 改網站設定（站名） |
 | `GET /api/logs` | 訪客紀錄查詢 |
 | `GET /api/admin/apidoc` | 這份文件的 Markdown 原稿（`{ md }`） |
-| `GET /api/admin/users` | 全部會員（狀態、用量、最後登入） |
-| `PUT /api/admin/users/{id}` | 核准／封鎖／升降管理員（`{ action }`） |
+| `GET /api/admin/users` | 全部會員（狀態、已批准服務、用量、最後登入） |
+| `PUT /api/admin/users/{id}` | 批准／封鎖／升降管理員／分服務批准（`{ action }`，見 §5c） |
 | `DELETE /api/admin/users/{id}` | 刪除會員 |
 | `GET /api/admin/relay/channels` | 全部中轉管道（上游金鑰遮罩） |
 | `POST /api/admin/relay/channels` | 新增中轉管道 |
@@ -265,15 +269,19 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 
 ## 5b. 會員與帳號 API
 
-- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`。
+- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`。
 - `POST /api/account/key` → `{ key, key_hint, key_at }`。**key 明文只在這次回應出現**，資料庫只存 SHA-256；重生會讓舊金鑰立即失效。`DELETE` 撤銷。
 - `POST /api/account/vpn-token` → `{ vpn_token }`。重生訂閱代碼（舊 `/vpn/sub/<舊token>` 立即失效）。
 - 以上都要登入 cookie；跨站請求被 Origin 擋（403 bad-origin）。
 
-## 5c. 成員管理：/api/admin/users
+## 5c. 成員管理：/api/admin/users（分服務批准）
 
-- `GET` → `{ rows }`：每筆 `id`、`email`、`name`、`picture`、`status`、`is_admin`、`relay_calls`、`vpn_pulls`、`last_login`、`created_at`；排序 pending 在前。
-- `PUT /api/admin/users/{id}` 本體 `{ "action": "approve" | "block" | "unblock" | "make_admin" | "drop_admin" }`。封鎖會同時把該會員踢下線（刪其 session）。
+2026-07-13 起改**分服務批准**：三個服務 `relay`（API 中轉站）、`vpn`、`playground`（LLM Playground）可以分別開關，存在 `users.services`（逗號分隔）。站長帳號不看清單、全部服務都能用。
+
+- `GET` → `{ rows }`：每筆 `id`、`email`、`name`、`picture`、`status`、`services`（逗號分隔字串）、`is_admin`、`relay_calls`、`vpn_pulls`、`last_login`、`created_at`；排序 pending 在前。
+- `PUT /api/admin/users/{id}` 本體二選一：
+  - `{ "action": "approve" | "block" | "unblock" | "make_admin" | "drop_admin" }` — `approve` 是快速鍵＝**一次批准全部服務**；`unblock` 恢復原本的服務清單（清單是空的就退回 pending）。封鎖會同時把該會員踢下線（刪其 session）。
+  - `{ "action": "set_services", "services": ["relay","vpn"] }` — **整包覆蓋**服務清單（只收合法服務名）。給了任何服務＝status 變 approved；全部收回＝退回 pending；封鎖中的帳號只改清單、狀態不動。
 - `DELETE /api/admin/users/{id}` 刪除帳號。
 - **護欄**：不能封鎖／降級／刪除自己；也不能動到 ADMIN_EMAILS 指定的站長帳號（回 403 protected — 要改就改環境變數）。
 
@@ -288,10 +296,13 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 | `kind` | `openai`（含所有 OpenAI 相容服務與本地 AI）／`anthropic`／`gemini`／`custom`；決定金鑰帶給上游的方式 |
 | `base_url` | **必填** 上游根網址，例 `https://api.openai.com` |
 | `api_key` | 上游金鑰（只有站長 API 摸得到，回讀一律遮罩） |
+| `models` | **必填** 這個管道可用的模型名稱（陣列，或逗號／換行分隔的字串；限英數與 `. _ / : -`、上限 40 個）。會員頁與 LLM Playground 都靠這份清單 |
 | `enabled` | 預設 true |
 
-- `PUT /api/admin/relay/channels/{id}` 整包覆蓋；**本體沒帶 `api_key` 欄位＝保留舊金鑰**（帶空字串＝清掉）。
+- `GET` → `{ rows }`，每筆含 `models`（陣列）、`has_key`、`key_hint`（金鑰一律遮罩）。
+- `PUT /api/admin/relay/channels/{id}` 整包覆蓋（**`models` 也要帶齊**）；**本體沒帶 `api_key` 欄位＝保留舊金鑰**（帶空字串＝清掉）。
 - 網頁上新增管道時，選 kind 會自動帶入該家的**官方 Base URL**；用其他供應商（便宜渠道／自架／本地模型）直接改掉即可（你手打過的網址不會被自動蓋掉）。
+- 會員看的 `GET /api/relay/channels` → `{ rows:[{ slug, name, kind, models }], approved }`（approved＝有沒有被批准 relay 服務）；/relay 頁上每個模型名稱都有一鍵複製。
 
 **上游金鑰放哪個標頭：依「路徑」決定，不是只看 kind**（2026-07-12 實測修正）。各家都有兩套介面：
 
@@ -313,8 +324,8 @@ Authorization: Bearer uak-你的金鑰
 ```
 
 - 金鑰放哪都收：`Authorization: Bearer`、`x-api-key`、`x-goog-api-key`、`?key=`（配合各家 SDK）。
-- 路徑照上游原本的填（中轉只換金鑰不改路徑）；回應串流直通。
-- 未帶金鑰 401、金鑰無效 401、帳號未核准 403、管道不存在或停用 404、上游連不上 502。
+- 路徑照上游原本的填（中轉只換金鑰不改路徑）；回應串流直通。`model` 參數也原樣轉發 — 填管道 `models` 清單裡的名稱即可。
+- 未帶金鑰 401、金鑰無效 401、帳號未被批准 relay 服務 403、管道不存在或停用 404、上游連不上 502。
 
 ## 5e. VPN 訂閱（多渠道）
 
@@ -345,6 +356,30 @@ Authorization: Bearer uak-你的金鑰
 
 > 想同時吃多個機場又要保留流量顯示，就只啟用那一個機場的渠道；其餘用 `enabled:false` 暫存。
 
+## 5f. LLM Playground（/playground）
+
+會員在網頁上直接試用中轉渠道裡的模型（2026-07-13 上線）。可選的模型＝各中轉管道的 `models` 清單；
+上游金鑰全程留在伺服器，會員只帶登入 cookie。對話存 D1、綁帳號、跨裝置同步。
+驗證：登入 cookie（要有 `playground` 服務）**或** `Authorization: Bearer <管理金鑰>`（以站長帳號的身分操作，方便 curl／agent 測試）。
+
+- `GET /api/playground/models` → `{ rows:[{ slug, name, kind, models }] }`（只列啟用中且有設模型的渠道）。
+- `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。
+- `GET /api/playground/conversations/{id}` → `{ conv, messages:[{ id, role, content, model, created_at }] }`。
+- `PUT /api/playground/conversations/{id}` 本體 `{ "title":"新名字" }` 改名；`DELETE` 刪除（連同訊息）。
+- `POST /api/playground/chat` 本體：
+
+```json
+{ "conv_id": 12, "channel": "gemini", "model": "gemini-3.1-flash-lite",
+  "messages": [ { "role":"user", "content":"你好" } ] }
+```
+
+  - `messages` 是完整上下文（最後一則要是 `user`；`role` 收 user/assistant/system）。
+  - **不帶 `conv_id`＝自動開新對話**（標題取第一句 user 訊息），對話編號由 SSE 第一筆事件回傳。
+  - `model` 一定要在該渠道的 `models` 清單裡，否則 400 `bad-model`。
+  - 回應是 SSE（`text/event-stream`），每筆 `data:` 都是 JSON：`{conv,title?}` →（多筆）`{d:"增量文字"}` → `{done:true}`；中途出錯是 `{error,hint}`（已生成的部分照存）。上游一開始就失敗則直接回 JSON 錯誤（會帶 `conv`）。
+  - 中斷連線（前端按「停止」）＝停止生成，已生成的內容照樣存進對話。
+  - 伺服器依渠道 kind 自動轉換請求／串流格式：openai、custom → `/v1/chat/completions`；anthropic → `/v1/messages`；gemini → `/v1beta/models/{model}:streamGenerateContent?alt=sse`。
+
 ## 6. 常用流程速查
 
 | 想做的事 | 步驟 |
@@ -356,8 +391,9 @@ Authorization: Bearer uak-你的金鑰
 | 頁面掛進選單 | GET /api/menu → items 加 `{ kind:"link", label, url:"/p/{slug}" }` → PUT /api/admin/menu |
 | 改站名 | PUT /api/admin/settings `{ "brand":"…" }` |
 | 看流量 | GET /api/logs?limit=50&since=今天零點的UTC時間 |
-| 加中轉管道 | POST /api/admin/relay/channels `{ slug, name, kind, base_url, api_key }` |
-| 核准會員 | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
+| 加中轉管道 | POST /api/admin/relay/channels `{ slug, name, kind, base_url, api_key, models:["gpt-4o-mini"] }` |
+| 批准會員（全部服務） | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
+| 批准／收回單一服務 | PUT /api/admin/users/{id} `{ "action":"set_services", "services":["relay","playground"] }`（整包覆蓋） |
 | 加 VPN 渠道 | POST /api/admin/vpn/channels `{ "name":"某機場", "kind":"sub", "url":"https://…" }` |
 | 暫停某渠道 | GET /api/admin/vpn/channels 找 id → PUT `{ name, kind, enabled:false }`（會員訂閱立刻少掉那些節點） |
 
@@ -370,12 +406,12 @@ Authorization: Bearer uak-你的金鑰
 
 | HTTP 狀態 | 常見 error | 說明 |
 |---|---|---|
-| 400 | bad-input / bad-id / bad-slug / bad-url / too-many / empty / bad-action / self | 參數或本體不合規則（看 hint） |
-| 401 | unauthorized / no-key / bad-key | 金鑰沒帶或不對（中轉：會員金鑰無效） |
-| 403 | bad-origin / not-approved / blocked / protected | 跨站被擋／帳號未核准或被封鎖／受保護的站長帳號 |
+| 400 | bad-input / bad-id / bad-slug / bad-url / too-many / empty / bad-action / self / bad-model | 參數或本體不合規則（看 hint）；bad-model＝模型不在渠道清單裡 |
+| 401 | unauthorized / no-key / bad-key / no-admin-user | 金鑰沒帶或不對（中轉：會員金鑰無效） |
+| 403 | bad-origin / not-approved / blocked / protected | 跨站被擋／該服務未被批准或帳號被封鎖／受保護的站長帳號 |
 | 404 | not-found / unknown-channel | 內容不存在（或公開 API 查到的是草稿）／中轉管道不存在 |
 | 409 | slug-taken | 自訂頁面或管道的 slug 已被使用 |
-| 502 | upstream-unreachable / upstream error | 中轉／VPN 上游連不上或回錯 |
+| 502 | upstream-unreachable / upstream-error / no-upstream-key | 中轉／VPN／Playground 上游連不上或回錯；渠道沒設上游金鑰 |
 | 413 | too-large | 圖片超過 1.8MB |
 | 415 | bad-type | 圖片格式不是 webp / jpeg / png / gif |
 | 500 | no-db / query-failed / insert-failed / update-failed / delete-failed / save-failed | 伺服器或資料庫問題（看 detail） |

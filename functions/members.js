@@ -22,6 +22,12 @@ const PAGE_CSS = `
   .filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
   .fbtn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:20px;padding:7px 15px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
   .fbtn.on{background:var(--accent);color:var(--accent-fg);border-color:var(--line2)}
+  .svcs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+  .svcs .lb{font-size:11px;color:var(--sub);font-weight:700;letter-spacing:.04em}
+  .schip{border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:14px;padding:4px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:.15s}
+  .schip:hover{border-color:var(--line2);color:var(--fg)}
+  .schip.on{background:var(--accent);color:var(--accent-fg);border:1px solid var(--line2)}
+  .schip:disabled{opacity:.4;cursor:default}
   @media(max-width:560px){.u{flex-wrap:wrap}.u .acts{width:100%;justify-content:flex-start;padding-left:53px}}
 `;
 
@@ -116,6 +122,7 @@ const MEMBERS_JS = `
       tx("登入：","Login: ")+fmt(r.last_login)+
       "  ·  "+tx("中轉","relay")+" "+(r.relay_calls||0)+
       "  ·  "+tx("訂閱","vpn")+" "+(r.vpn_pulls||0)));
+    info.appendChild(svcChips(r));
     row.appendChild(info);
 
     var acts=el("div","acts");
@@ -125,7 +132,7 @@ const MEMBERS_JS = `
       acts.appendChild(b);
     }
     var confirmDel=r.email;
-    if(r.status==="pending")act(tx("核准","Approve"),"approve","pri");
+    if(r.status==="pending")act(tx("批准全部服務","Approve all"),"approve","pri");
     if(r.status==="approved"&&!r.is_admin)act(tx("封鎖","Block"),"block");
     if(r.status==="blocked")act(tx("解封","Unblock"),"unblock","pri");
     if(!r.is_admin&&r.status!=="blocked")act(tx("設為站長","Make admin"),"make_admin");
@@ -147,6 +154,32 @@ const MEMBERS_JS = `
     api("/api/admin/users/"+r.id,{method:"PUT",json:{action:action}})
       .then(function(){MU.flash(tx("已更新","Updated"));load();})
       .catch(function(e){btn.disabled=false;MU.flash(esc(e.message||e));});
+  }
+
+  // 分服務批准：每個會員三顆服務開關（實心＝已批准），點一下切換。
+  // 站長帳號不用開關（天生全通）；封鎖中的帳號開關鎖住（先解封再說）。
+  var SVC=[["playground","Playground"],["relay",null],["vpn","VPN"]];
+  function svcChips(r){
+    var box=el("div","svcs");
+    box.appendChild(el("span","lb",tx("服務","SERVICES")));
+    if(r.is_admin){box.appendChild(el("span","muted",tx("站長＝全部服務","admin = all services")));return box;}
+    var cur=String(r.services||"").split(",").filter(Boolean);
+    SVC.forEach(function(s){
+      var label=s[1]||(s[0]==="relay"?tx("中轉站","Relay"):s[0]);
+      var on=cur.indexOf(s[0])>=0;
+      var b=el("button","schip"+(on?" on":""),(on?"✓ ":"")+label);
+      b.title=on?tx("點一下收回","Click to revoke"):tx("點一下批准","Click to grant");
+      if(r.status==="blocked")b.disabled=true;
+      b.addEventListener("click",function(){
+        var next=on?cur.filter(function(x){return x!==s[0];}):cur.concat([s[0]]);
+        b.disabled=true;
+        api("/api/admin/users/"+r.id,{method:"PUT",json:{action:"set_services",services:next}})
+          .then(function(){MU.flash(tx("已更新","Updated"));load();})
+          .catch(function(e){b.disabled=false;MU.flash(esc(e.message||e));});
+      });
+      box.appendChild(b);
+    });
+    return box;
   }
 
   start();
