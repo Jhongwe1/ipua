@@ -291,7 +291,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 
 | 欄位 | 規則 |
 |---|---|
-| `slug` | **必填** 網址代稱（小寫英數與連字號），例 `openai`、`my-ollama` |
+| `slug` | **選填** 網址代稱（小寫英數與連字號）。留空＝自動從名稱產生（轉不出英數就隨機 `ch-xxxxxx`，撞名自動補尾碼）；**PUT 時留空＝沿用舊代稱**（會員的 /relay 網址不變）。網頁表單 2026-07-14 起已不顯示這欄 |
 | `name` | **必填** 顯示名稱 |
 | `kind` | `openai`（含所有 OpenAI 相容服務與本地 AI）／`anthropic`／`gemini`／`custom`；決定金鑰帶給上游的方式 |
 | `base_url` | **必填** 上游根網址，例 `https://api.openai.com` |
@@ -391,7 +391,7 @@ Authorization: Bearer uak-你的金鑰
 | 頁面掛進選單 | GET /api/menu → items 加 `{ kind:"link", label, url:"/p/{slug}" }` → PUT /api/admin/menu |
 | 改站名 | PUT /api/admin/settings `{ "brand":"…" }` |
 | 看流量 | GET /api/logs?limit=50&since=今天零點的UTC時間 |
-| 加中轉管道 | POST /api/admin/relay/channels `{ slug, name, kind, base_url, api_key, models:["gpt-4o-mini"] }` |
+| 加中轉管道 | POST /api/admin/relay/channels `{ name, kind, base_url, api_key, models:["gpt-4o-mini"] }`（slug 自動產生） |
 | 批准會員（全部服務） | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
 | 批准／收回單一服務 | PUT /api/admin/users/{id} `{ "action":"set_services", "services":["relay","playground"] }`（整包覆蓋） |
 | 加 VPN 渠道 | POST /api/admin/vpn/channels `{ "name":"某機場", "kind":"sub", "url":"https://…" }` |

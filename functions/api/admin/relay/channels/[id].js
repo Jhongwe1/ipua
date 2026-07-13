@@ -25,9 +25,10 @@ export async function onRequestPut({ request, env, params }) {
     const old = await env.DB.prepare("SELECT * FROM relay_channels WHERE id=?1").bind(id).first();
     if (!old) return json({ error: "not-found" }, 404);
     const key = c.ch.api_key === undefined ? old.api_key : c.ch.api_key;
+    const slug = c.ch.slug || old.slug;   // 沒帶 slug＝沿用舊代稱（會員的 /relay 網址不變）
     await env.DB.prepare(
       "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,models=?6,enabled=?7 WHERE id=?8"
-    ).bind(c.ch.slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.models, c.ch.enabled, id).run();
+    ).bind(slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.models, c.ch.enabled, id).run();
     const row = await env.DB.prepare("SELECT * FROM relay_channels WHERE id=?1").bind(id).first();
     return json({ row: maskRow(row) });
   } catch (e) {

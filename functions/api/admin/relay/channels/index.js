@@ -4,7 +4,7 @@
 // kind：openai（OpenAI 與所有 OpenAI 相容服務，含本地 AI）/ anthropic / gemini / custom。
 // custom 與 openai 的差別只在顯示，驗證方式同樣是 Authorization: Bearer。
 import { json, SLUG_RE } from "../../../../../lib/site.js";
-import { adminOk, keyHint } from "../../../../../lib/auth.js";
+import { adminOk, keyHint, randToken } from "../../../../../lib/auth.js";
 
 export const KINDS = { openai: 1, anthropic: 1, gemini: 1, custom: 1 };
 
@@ -29,12 +29,25 @@ export function modelList(r) {
   return String(r && r.models || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
 }
 
+// 名稱 → 自動網址代稱：能轉英數就用名稱（gemini official → gemini-official），
+// 轉不出來（中文名等）就給隨機代稱。站長介面 2026-07-14 起不再要求填 slug。
+export function autoSlug(name) {
+  let s = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
+  if (!SLUG_RE.test(s)) s = "";
+  return s || ("ch-" + randToken("", 6));
+}
+
 // 欄位整理：回 { ch } 或 { err }。api_key 缺席（undefined）＝「保留舊值」，由呼叫端處理。
 // models 必填（新增渠道時就要先把模型名稱設定好）。
+// slug 選填：留空時 POST 會用 autoSlug 自動產生、PUT 保留舊值（ch.slug 維持 undefined 交呼叫端處理）。
 export function cleanChannel(b) {
   if (!b || typeof b !== "object") return { err: "需要 JSON 本體" };
-  const slug = String(b.slug == null ? "" : b.slug).trim().toLowerCase();
-  if (!SLUG_RE.test(slug)) return { err: "slug 只能用小寫英數與連字號（頭尾不能是連字號）" };
+  const slugRaw = String(b.slug == null ? "" : b.slug).trim().toLowerCase();
+  let slug;
+  if (slugRaw) {
+    if (!SLUG_RE.test(slugRaw)) return { err: "slug 只能用小寫英數與連字號（頭尾不能是連字號）" };
+    slug = slugRaw;
+  }
   const name = String(b.name == null ? "" : b.name).trim().slice(0, 60);
   if (!name) return { err: "名稱不能是空的" };
   const kind = KINDS[b.kind] ? b.kind : "openai";
@@ -83,15 +96,25 @@ export async function onRequestPost({ request, env }) {
   const c = cleanChannel(body);
   if (c.err) return json({ error: "bad-input", hint: c.err }, 400);
 
-  try {
-    const r = await env.DB.prepare(
-      "INSERT INTO relay_channels (slug,name,kind,base_url,api_key,models,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
-    ).bind(c.ch.slug, c.ch.name, c.ch.kind, c.ch.base_url, c.ch.api_key || "", c.ch.models, c.ch.enabled,
-           new Date().toISOString()).run();
-    return json({ id: r.meta.last_row_id, slug: c.ch.slug, url: "/relay/" + c.ch.slug });
-  } catch (e) {
-    const msg = String(e && e.message || e);
-    if (msg.indexOf("UNIQUE") >= 0) return json({ error: "slug-taken", hint: "slug「" + c.ch.slug + "」已有管道在用" }, 409);
-    return json({ error: "insert-failed", detail: msg }, 500);
+  // 沒帶 slug＝自動產生；自動產生撞名就補隨機尾碼重試（手動指定的照樣回 409 讓人自己改）
+  const explicit = !!c.ch.slug;
+  let slug = c.ch.slug || autoSlug(c.ch.name);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await env.DB.prepare(
+        "INSERT INTO relay_channels (slug,name,kind,base_url,api_key,models,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+      ).bind(slug, c.ch.name, c.ch.kind, c.ch.base_url, c.ch.api_key || "", c.ch.models, c.ch.enabled,
+             new Date().toISOString()).run();
+      return json({ id: r.meta.last_row_id, slug: slug, url: "/relay/" + slug });
+    } catch (e) {
+      const msg = String(e && e.message || e);
+      if (msg.indexOf("UNIQUE") >= 0) {
+        if (explicit) return json({ error: "slug-taken", hint: "slug「" + slug + "」已有管道在用" }, 409);
+        slug = (autoSlug(c.ch.name) + "-" + randToken("", 4)).slice(0, 64);
+        continue;
+      }
+      return json({ error: "insert-failed", detail: msg }, 500);
+    }
   }
+  return json({ error: "slug-taken", hint: "自動產生代稱一直撞名，請改個名稱再試" }, 409);
 }
