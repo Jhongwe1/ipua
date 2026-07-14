@@ -9,8 +9,14 @@ ipua/
 ├─ API.md                 ← 完整 API 文件（**唯一原稿**，GitHub 直接可讀；線上 /api-docs 由它產生）
 ├─ AGENTS.md              ← 給 AI agent 的操作指南（金鑰在哪、流程照抄、驗證清單）
 ├─ .claude/skills/uaip-api/SKILL.md ← Claude Code skill 入口（薄殼，指向 AGENTS.md／API.md）
-├─ tools/build-apidoc.mjs ← 把 API.md 轉成 lib/apidoc.js（改完 API.md 要跑一次再部署）
-├─ db/schema.sql          ← 資料表結構（visits 訪客＋articles 文章＋media 圖片＋pages 自訂頁面＋menu 選單＋settings 設定）
+├─ tools/build-apidoc.mjs ← 把 API.md 轉成 lib/apidoc.js（改完 API.md 要跑 npm run apidoc 再部署）
+├─ tools/check-csp.mjs    ← 靜態 CSP hash 防漂移（改 index.html inline script 後跑，同步 _headers）
+├─ tools/seed-local.mjs   ← 本機種子資料（npm run seed）
+├─ migrations/            ← ⭐ 資料表結構的**唯一來源**（0001_baseline＝原 schema，0002＝v1 計量/稽核；
+│                            db/schema.sql 已退役刪除）。本機 npm run migrate:local、正式 npm run migrate:remote
+├─ test/                  ← vitest（跑在 workerd，真 D1）：unit/ 純函式、int/ 端點行為
+├─ docs/                  ← ADR、威脅模型（THREAT-MODEL）、對照（COMPARISON）、報告骨架
+├─ package.json / tsconfig.json / vitest.config.mjs ← 工具鏈（執行期零依賴，只有 devDeps）
 ├─ lib/                   ← Functions 共用程式（部署時自動打包，不會上網）
 │  ├─ site.js             ← 頁面外殼（pageShell）、管理頁共用樣式（ADMIN_CSS）、站長驗證、共用工具；
 │  │                         DEFAULT_MENU 預設選單、getChrome 讀選單/站名、SLUG_RE 頁面代稱規則
@@ -204,8 +210,11 @@ npx wrangler d1 export ipua-logs --remote --output backup.sql
 ## 本機測試
 
 ```
-npx wrangler d1 execute ipua-logs --local --file db/schema.sql   # 第一次先建本機表
-npx wrangler pages dev                                           # http://localhost:8788
+npm ci                  # 第一次裝工具鏈（vitest/wrangler/tsc；執行期仍零依賴）
+npm run migrate:local   # 建本機表（套用 migrations/ 全部；db/schema.sql 已退役）
+npm run seed            # （選用）塞站長＋會員＋示範渠道
+npm run dev             # http://localhost:8788
+npm run checks          # 改程式後：typecheck＋全部測試
 ```
 本機（localhost）後台與 API 免金鑰，方便試寫；本機資料庫與正式站完全分開，隨便玩不影響線上。
 

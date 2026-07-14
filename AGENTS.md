@@ -15,10 +15,17 @@
 | 改側邊欄選單、改站名 | `PUT /api/admin/menu`、`PUT /api/admin/settings` |
 | Playground 開放給所有登入會員 | `PUT /api/admin/settings {"pg_open":true}`（false＝關閉，回到逐人批准） |
 | 看流量 | `GET /api/logs` |
+| 看站內錯誤／用量（v1.0.0） | `GET /api/admin/errors`、`GET /api/admin/stats?days=7`；健康檢查 `GET /api/health`（公開） |
 | 批准／管理會員（可分服務） | `GET /api/admin/users`、`PUT /api/admin/users/{id} {"action":"approve"}` 或 `{"action":"set_services","services":[…]}` |
+| 設會員／全域配額（v1.0.0） | `PUT /api/admin/users/{id} {"action":"set_quota",…}`（個人）、`PUT /api/admin/settings {"quota_relay_day":…}`（全域） |
 | 加／改 API 中轉管道（含模型清單） | `POST/PUT/DELETE /api/admin/relay/channels…`（`models` 必填） |
 | 加／改 VPN 渠道 | `POST/PUT/DELETE /api/admin/vpn/channels…` |
 | 測 LLM Playground | `POST /api/playground/chat`（管理金鑰可直接測，SSE 串流） |
+
+> **v1.0.0（2026-07-14）新增**：中轉／Playground 有**每人每日配額＋每分鐘限流**（站長豁免；超額 429＋Retry-After），
+> 用量記在 req_log、看得到 token 與延遲；所有站長變更寫**稽核日誌**；VPN 對未授權者**隱形**
+> （選單／頁面／API 欄位全隱藏）；SSR 頁面有 **per-request nonce CSP**。這些對「內容操作」多半透明，
+> 但若你用管理金鑰大量打 relay 測試而撞到 429，那是配額（站長帳號不會，見 §5d）。
 
 只有「改程式或版型」才需要動這個 repo 並部署（見文末）。
 
@@ -29,7 +36,7 @@
 - 正式站：`https://uaip.cc.cd`（等同 `https://uaip.pages.dev`）
 - 本機開發：`http://localhost:8788`（`npx wrangler pages dev`；**localhost 免金鑰**，想先試就在本機試）
 - 站長 API（路徑含 `/admin` 的與 `/api/logs`）要帶標頭：`Authorization: Bearer <管理金鑰>`
-- **管理金鑰**：讀專案根目錄 `ADMIN.md` 的「管理金鑰（LOGS_TOKEN）」段落（ADMIN.md 不會部署上網）
+- **管理金鑰**：讀本機 `ADMIN.local.md`（gitignored；2026-07-14 起 ADMIN.md 不再放明文）
 
 ## 三條鐵則（違反會出事）
 
@@ -124,10 +131,17 @@ curl "https://uaip.cc.cd/api/logs?limit=50&since=2026-07-08T16:00:00Z" \
 
 ## 要改到程式碼時（僅限改功能/版型，內容操作不需要）
 
-- 部署：`npx wrangler pages deploy`（**不要加任何參數，尤其不要加「.」**；不能用後台拖曳上傳）。
-- 動了 `db/schema.sql`：本機 `npx wrangler d1 execute ipua-logs --local --file db/schema.sql`、
-  正式 `--remote -y`（schema 全是 IF NOT EXISTS，可重複執行）。
-- **改了任何 API**：同步更新 `API.md`，然後跑 `node tools/build-apidoc.mjs` 重新產生 `lib/apidoc.js`
-  （該檔是自動產生的，不要手改），必要時也更新本檔的流程範例。
-- 本機測試：`npx wrangler d1 execute ipua-logs --local --file db/schema.sql` 建表後 `npx wrangler pages dev`。
-- 其他維護眉角（金鑰更換、備份、圖片快取地雷的完整故事、廣告計畫）見 [ADMIN.md](./ADMIN.md)。
+v1.0.0 起本專案有工具鏈（`npm ci` 裝 vitest／wrangler／tsc；**執行期仍零依賴**）：
+
+- **改任何程式前先跑測試**摸清現狀：`npm test`（跑在 workerd 裡，真 D1）；`npm run checks`＝typecheck＋測試。
+- **schema 改動走 migration**：新增檔案 `migrations/000N_描述.sql`（**別再改** `migrations/0001_baseline.sql`；
+  `db/schema.sql` 已退役刪除）。本機套用 `npm run migrate:local`、正式 `npm run migrate:remote`（純增量，
+  先於部署）。測試會自動套 `migrations/` 全部，所以新表新欄記得補測試。
+- **改了任何 API**：同步更新 `API.md`，跑 `npm run apidoc` 重新產生 `lib/apidoc.js`（自動產生勿手改）；
+  CI 會擋「忘了重跑 apidoc」。必要時也更新本檔與 README 的流程範例。
+- **改了 `public/index.html` 的 inline script**：跑 `node tools/check-csp.mjs --print` 拿新 hash 更新
+  `public/_headers`（CI 有 CSP 防漂移檢查，忘了會紅燈）。
+- 部署：`npm run deploy`（＝重建 apidoc＋`wrangler pages deploy`；**不要加「.」**、不能用後台拖曳上傳）。
+- 本機開發：`npm run migrate:local` 建表 →（選用）`npm run seed` 塞種子 → `npm run dev`（localhost 免金鑰）。
+- 更完整的架構論述見 [README.md](./README.md) 與 `docs/`（ADR、威脅模型、對照、報告骨架）；
+  維護眉角（金鑰更換、備份、圖片快取地雷）見 [ADMIN.md](./ADMIN.md)；已知債務見 [DEBT.md](./DEBT.md)。

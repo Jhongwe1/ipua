@@ -1,159 +1,102 @@
-# uaip — IP／UA 查詢站 ＋ 新聞／文章網站
+# uaip — an edge-native LLM gateway & personal portal
 
-線上網址：<https://uaip.cc.cd>（架在 **Cloudflare Pages**）
+[![CI](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml)
+&nbsp;Live: **<https://uaip.cc.cd>** · 繁體中文版說明：**[README.zh-TW.md](./README.zh-TW.md)**
 
-這是一個個人網站，包含這些功能：
+A single-maintainer engineering case study: a **zero-framework, zero-runtime-dependency
+LLM gateway with member management, metering/quotas, observability and a full content portal**,
+running entirely on Cloudflare Pages Functions + one D1 (SQLite) database. No servers,
+no containers, no build step for the runtime — `git push` is the whole supply chain.
 
-1. **工具**：查詢訪客自己的 IP／User-Agent 等連線資訊（首頁 `/`、`/ip`、`/ua`）。
-2. **內容**：新聞／文章系統（後台發文、圖片存資料庫、SSR 列表與文章頁、RSS、sitemap）。
-3. **自訂頁面**：用 API 就能開新頁面（新連結），公開網址 `/p/網址代稱`，適合「關於本站」這類獨立頁。
-4. **會員服務（2026-07-11 上線，需 Google 登入＋站長核准）**：
-   - **API 中轉站** `/relay`：會員用一把金鑰、一個網址接上各家 AI API（OpenAI／Claude／Gemini／本地模型…）；上游金鑰由站長保管，會員看不到。
-   - **VPN 訂閱** `/vpn`：會員拿到專屬訂閱網址，Clash／v2rayN 一鍵匯入、自動更新；來源由站長設定（上游訂閱或手動節點）。
+## What it does
 
-右上角是 **帳號**鈕（Google 登入／頭像下拉）。站長專用（對一般訪客隱藏）：**成員管理**（/members，核准與封鎖會員）、
-**文章管理**（/admin）、**訪客紀錄**（/logs）、**API 文件**（/api-docs）；站長的編輯工具
-（改文章、改側邊欄選單、改站名）收在 **☰ 側邊欄「站長」區**。所有頁面共用同一套版型
-（☰ 側邊欄、日夜主題、中英切換、黑白極簡）。
+| Service | Path | Notes |
+|---|---|---|
+| **LLM gateway (relay)** | `/relay/{channel}/…` | Members use one `uak-` key + one base URL for any upstream (OpenAI / Anthropic / Gemini / self-hosted). Upstream keys never leave the server. Streaming passthrough, per-user daily quotas + rate limits, token/latency metering scanned from the **response** stream. |
+| **LLM playground** | `/playground` | Web chat over the same channels; conversations persisted in D1; SSE streaming with provider-identity sanitization for members. |
+| **VPN subscription** | `/vpn` | Multi-upstream merge behind one member URL. **Invisible** to anyone not granted the service (menu, page, and API fields all hide). |
+| **Content portal** | `/news` `/articles` `/p/{slug}` | SSR news/article CMS with D1-stored images, RSS, sitemap, OG/JSON-LD; custom pages creatable via API. |
+| **Tools** | `/` `/ip` `/ua` | The original IP/UA lookup SPA. |
+| **Admin** | `/members` `/admin` `/logs` `/api-docs` | Member/service/quota management, article CMS, visitor + error + usage dashboards, self-hosted API docs. |
 
-> 首次啟用會員功能要設 Google OAuth 憑證與站長信箱 — 照抄步驟見 [ADMIN.md](./ADMIN.md) 的「Google 登入 ＋ 會員系統」。
+Identity: Google OAuth → HttpOnly session (hashed sids). Per-service grants (`relay` / `vpn` /
+`playground`) per member; admin = env-pinned email list. Everything admin-mutable is audit-logged.
 
-## 文件地圖（找東西先看這）
+## Architecture
 
-| 文件 | 內容 |
-|---|---|
-| [API.md](./API.md) | **完整 API 文件**：所有端點、參數、欄位規則、curl 範例（也是線上 /api-docs 的原稿） |
-| [AGENTS.md](./AGENTS.md) | **給 AI agent 的操作指南**：金鑰在哪、發文/開頁面/掛選單的照抄流程、驗證清單 |
-| [ADMIN.md](./ADMIN.md) | 站長維護筆記：**管理金鑰**、部署眉角、資料庫維護、廣告計畫（不會部署上網） |
-| `.claude/skills/uaip-api/` | Claude Code 的 skill 入口（薄殼，內容指向 AGENTS.md 與 API.md） |
+```
+                      Cloudflare edge
+┌────────────────────────────────────────────────────────┐
+│ static SPA (public/)          Pages Functions          │
+│  /, /ip, /ua                  functions/**             │
+│  CSP: sha256 inline hash       ├─ SSR shell lib/site.js│
+│                                │   (per-request CSP    │
+│  _headers ──────────┐          │    nonce, one exit)   │
+│                     ▼          ├─ /relay pump ─────────┼──► any LLM upstream
+│               ┌──────────┐     ├─ /vpn/sub merge ──────┼──► airports
+│               │    D1    │◄────┤─ /api/** (JSON)       │
+│               │ (SQLite) │     └─ middleware: visits   │
+│               └──────────┘                             │
+│  users·sessions·req_log·errlog·audit_log·content       │
+└────────────────────────────────────────────────────────┘
+```
 
-這份 README 只講「這是什麼、怎麼跑起來、API 快速上手」。
+Design decisions are recorded as ADRs — the honest trade-offs, not just the wins:
 
----
+- [ADR-0001 Zero framework, zero runtime dependencies](./docs/adr/0001-zero-framework.md)
+- [ADR-0002 One D1 database for everything](./docs/adr/0002-d1-only.md)
+- [ADR-0003 Shared upstream keys + quotas, not BYOK](./docs/adr/0003-shared-key-quota-not-byok.md)
+- [ADR-0004 CSP: per-request nonce (SSR) + sha256 (static)](./docs/adr/0004-csp-nonce-plus-hash.md)
+- [ADR-0005 Relay metering via pump, not tee()](./docs/adr/0005-relay-pump-metering-not-tee.md)
 
-## 用 API 操作網站（快速上手）
+Also: [Threat model (STRIDE)](./docs/THREAT-MODEL.md) · [Honest comparison vs one-api / LiteLLM / OpenRouter / AI Gateway](./docs/COMPARISON.md) · [Known debt](./DEBT.md) · [Latency/cost report skeleton](./docs/REPORT-SKELETON.md) · [Security policy](./SECURITY.md)
 
-全站功能（發文、開頁面、改選單、改站名、查流量）都有 API，不用進後台網頁。
-站長 API 要帶 `Authorization: Bearer <管理金鑰>`（金鑰在 [ADMIN.md](./ADMIN.md)；本機 localhost 免金鑰）。
+## Engineering evidence (v1.0.0)
 
-**發一篇新聞**（中文一定先存成 UTF-8 的 `art.json` 再送，直接寫在指令列會亂碼）：
+- **170+ tests** running inside **workerd** (`@cloudflare/vitest-pool-workers`) — the same
+  runtime as production, real D1, real `crypto.subtle`, real streams. Handlers are imported
+  directly (bracket filenames and all) and driven with hand-built contexts; upstreams are
+  mocked with `fetchMock` so tests assert *what actually got forwarded* (header stripping,
+  key swapping, byte-for-byte stream fidelity).
+- **CI** (GitHub Actions): typecheck → tests → apidoc drift check → CSP hash drift check.
+  Deploys stay local by design (`npm run deploy`).
+- **Metering**: every relay/playground request writes one `req_log` row (status, duration,
+  TTFB, tokens in/out scanned from the response tail — request bodies are never buffered).
+  `/logs` has visitor / error / usage dashboards with p50/p95.
+- **Schema as code**: `migrations/` is the single source of truth; tests apply migrations
+  before every run; production migration = `npm run migrate:remote` (incremental-only).
+
+## Repository layout
+
+```
+functions/        Pages Functions: APIs, SSR pages, relay engine, middleware
+lib/              shared server code (site shell, auth, quota, observe, chrome, playground)
+public/           deployed static assets (SPA + client scripts + _headers CSP)
+migrations/       D1 schema, the only source of truth
+test/             vitest-pool-workers suites (unit + integration)
+tools/            build-apidoc / check-csp / seed-local
+docs/             ADRs, threat model, comparison, report skeleton
+API.md            full API reference (source of the live /api-docs page)
+AGENTS.md         operating guide for AI agents
+ADMIN.md          maintainer notes (secrets live in gitignored ADMIN.local.md)
+```
+
+## Develop / test / deploy
 
 ```bash
-# art.json： { "category":"news", "status":"published", "title":"標題",
-#             "summary":"一兩句摘要", "cover":"/img/5", "body_md":"內文 **Markdown**" }
-curl -X POST https://uaip.cc.cd/api/admin/articles \
-  -H "Authorization: Bearer 管理金鑰" \
-  -H "content-type: application/json; charset=utf-8" --data-binary @art.json
-# 回 { "id":12, "status":"published" } → 上線在 /news/12
+npm ci                    # dev toolchain (vitest, wrangler, tsc) — runtime has zero deps
+npm run migrate:local     # create local D1 from migrations/
+npm run seed              # optional: local admin/member/channel seed
+npm run dev               # http://localhost:8788 (admin APIs need no token on localhost)
+npm run checks            # typecheck + full test suite
+npm run deploy            # rebuild apidoc + wrangler pages deploy  (never pass ".")
+npm run migrate:remote    # apply new migrations to production (run BEFORE deploy)
 ```
 
-**開一個新頁面（新連結）**，例如「關於本站」：
-
-```bash
-# page.json： { "slug":"about", "status":"published", "title":"關於本站",
-#              "summary":"SEO 描述", "body_md":"## 內容\n\n……" }
-curl -X POST https://uaip.cc.cd/api/admin/pages \
-  -H "Authorization: Bearer 管理金鑰" \
-  -H "content-type: application/json; charset=utf-8" --data-binary @page.json
-# 回 { "url":"/p/about" } → 上線在 https://uaip.cc.cd/p/about
-```
-
-**把新頁面掛進側邊欄**：`GET /api/menu` 拿現況 → items 加
-`{ "kind":"link", "label":"關於本站", "url":"/p/about" }` → 整包 `PUT /api/admin/menu`。
-
-其餘端點（圖片上傳、改站名、訪客紀錄、公開讀取…）與三條鐵則（PUT 整包覆蓋、
-圖片編號不可重用、UTF-8）詳見 **[API.md](./API.md)**。
+First-time setup (Cloudflare login, Google OAuth secrets, admin emails): see
+[ADMIN.md](./ADMIN.md). Quick API tour (publish a post, create a page, wire the menu):
+see [API.md](./API.md) — machine-readable and served live at `/api-docs`.
 
 ---
 
-## 技術架構
-
-| 項目 | 用什麼 |
-|---|---|
-| 主機 | Cloudflare Pages（免費方案） |
-| 伺服端程式 | Pages Functions（`functions/` 資料夾，Node/Workers 語法） |
-| 資料庫 | Cloudflare D1（SQLite），名稱 `ipua-logs`，綁定名 `DB` |
-| 部署工具 | `wrangler`（用 `npx` 執行，免安裝） |
-| 前端 | 純 HTML／CSS／JS，無框架；Markdown 用 `marked` |
-
-**不用 `npm install`**：本專案沒有 `node_modules`，所有指令都用 `npx wrangler ...` 直接跑。
-
----
-
-## 資料夾結構（簡版）
-
-```
-ipua/
-├─ wrangler.toml     ← Pages 設定：專案名 uaip、輸出資料夾 public、D1 綁定
-├─ README.md         ← 你正在看的這份
-├─ API.md            ← 完整 API 文件（唯一原稿；線上 /api-docs 由它產生）
-├─ AGENTS.md         ← 給 AI agent 的操作指南（流程照抄、驗證清單）
-├─ ADMIN.md          ← 站長詳細筆記（含金鑰、維護指令、廣告計畫）
-├─ .claude/skills/uaip-api/  ← Claude Code skill 入口（指向 AGENTS.md／API.md）
-├─ tools/build-apidoc.mjs    ← 把 API.md 轉成 lib/apidoc.js（改完文件要跑）
-├─ db/schema.sql     ← 資料表結構（visits 訪客／articles 文章／media 圖片／pages 自訂頁面／menu 選單／settings 設定）
-├─ lib/              ← Functions 共用程式（site.js 外殼、pages.js 渲染、apidoc.js＝自動產生、vendor/marked）
-├─ functions/        ← 伺服端程式（API、SSR 頁面、/logs 與 /admin 管理頁、訪客紀錄中介層）
-└─ public/           ← 真正上網的靜態檔（只有這個資料夾會被部署）
-   ├─ index.html     ← 主站（IP／UA 查詢工具）
-   └─ assets/        ← 前端腳本（admin.js、logs.js、adminbar.js、marked.js）
-```
-
-完整檔案清單與每個檔案的作用，見 [ADMIN.md](./ADMIN.md) 開頭的結構圖。
-
----
-
-## 部署上線
-
-在專案資料夾裡執行（**指令不要加任何參數，尤其不要加「.」**）：
-
-```bash
-npx wrangler pages deploy
-```
-
-`wrangler.toml` 已寫好專案名與輸出資料夾，所以不用帶參數。
-加了 `.` 會把根目錄（含筆記、快取）整包上傳，是錯的。
-也**不能**用 Cloudflare 後台的拖曳上傳（那樣 Functions 與 D1 綁定會消失）。
-
-第一次在新電腦部署，要先登入 Cloudflare：
-
-```bash
-npx wrangler login
-```
-
-若改過 `db/schema.sql`，正式資料庫要補跑一次（`IF NOT EXISTS`，跑幾次都安全）：
-
-```bash
-npx wrangler d1 execute ipua-logs --remote --file db/schema.sql
-```
-
----
-
-## 本機測試
-
-```bash
-# 第一次先建本機資料庫（跟正式站完全分開）
-npx wrangler d1 execute ipua-logs --local --file db/schema.sql
-
-# 啟動本機開發伺服器 → http://localhost:8788
-npx wrangler pages dev
-```
-
-本機（localhost）後台與 API **免金鑰**，方便隨便試寫，不影響線上。
-
----
-
-## 幾個一定要知道的重點
-
-- **管理金鑰（LOGS_TOKEN）** 是 Cloudflare Pages 的加密環境變數，不是寫在程式碼裡。
-  `/logs`、`/admin`、`/api-docs` 與所有站長 API 共用同一把。金鑰值與更換指令在 [ADMIN.md](./ADMIN.md)。
-- **全站功能都有 API**：發文、上傳圖、開自訂頁面、改選單、改站名、查紀錄。
-  文件唯一原稿是 **[API.md](./API.md)**；改完跑 `node tools/build-apidoc.mjs` 產生線上版
-  （`lib/apidoc.js`，自動產生勿手改），再部署。**改 API 記得同步 API.md 與 AGENTS.md**。
-- **圖片編號（`/img/編號`）永遠不能重複使用**：它掛一年不變的邊緣快取，且快取清不掉。
-  換圖＝上傳新編號、改文章 cover，絕不要重設資料庫流水號。（踩過雷，詳見 ADMIN.md）
-- **廣告版位**已內建但目前是空殼，等 Adsterra 代碼；計畫細節見 ADMIN.md 的「廣告計畫」章節。
-
----
-
-*本專案為個人備份用途，儲存於私人 GitHub repo。*
+*Personal project of a single maintainer; the repo doubles as its own backup.*
