@@ -836,7 +836,8 @@
     document.documentElement.setAttribute("data-theme", th);
     var b = document.getElementById("themeToggle");
     if(b){
-      b.textContent = themeMode === "day" ? "☀" : (themeMode === "night" ? "☾" : "🌓");
+      /* 太陽帶 U+FE0E 強制黑白字形（不然 ☀ 會被畫成彩色 emoji）；自動模式用幾何符 ◐ 取代彩色 🌓 */
+      b.textContent = themeMode === "day" ? "☀︎" : (themeMode === "night" ? "☾" : "◐");
       b.title = t("theme." + themeMode);
       b.setAttribute("aria-label", t("theme." + themeMode));
     }
