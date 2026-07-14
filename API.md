@@ -54,6 +54,8 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `GET /api/pages/{slug}` | 單一已發佈自訂頁面 |
 | `GET /api/menu` | 側邊欄選單 |
 | `GET /api/settings` | 網站公開設定（站名、Playground 是否全員開放） |
+| `GET /api/health` | 健康檢查 `{ ok, version, db }`（部署後 smoke 測試用） |
+| `POST /api/csp-report` | CSP 違規回報收集端（瀏覽器自動送；10% 取樣進錯誤日誌；永遠 204） |
 | `GET /img/{id}` | 圖片（D1 讀出、邊緣快取一年） |
 | `GET /feed` | RSS 訂閱源（最新 20 篇） |
 | `GET /sitemap` | 搜尋引擎網址清單（含文章與自訂頁面） |
@@ -97,8 +99,11 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `DELETE /api/admin/pages/{id或slug}` | 刪除頁面（不可復原） |
 | `POST /api/admin/media` | 上傳圖片 |
 | `PUT /api/admin/menu` | 覆蓋側邊欄選單 |
-| `PUT /api/admin/settings` | 改網站設定（站名、Playground 全員開放開關） |
+| `PUT /api/admin/settings` | 改網站設定（站名、Playground 全員開放、配額全域預設、計量開關） |
 | `GET /api/logs` | 訪客紀錄查詢 |
+| `GET /api/admin/errors` | 站內錯誤日誌（`?limit&offset&src`；relay/playground/OAuth/CSP 埋點） |
+| `DELETE /api/admin/errors` | 清空錯誤日誌 |
+| `GET /api/admin/stats` | 用量統計（`?days=7`；每日×服務、渠道×模型、原始耗時值供算 p95）— /logs 用量分頁的數據源 |
 | `GET /api/admin/apidoc` | 這份文件的 Markdown 原稿（`{ md }`） |
 | `GET /api/admin/users` | 全部會員（狀態、已批准服務、用量、最後登入） |
 | `PUT /api/admin/users/{id}` | 批准／封鎖／升降管理員／分服務批准（`{ action }`，見 §5c） |

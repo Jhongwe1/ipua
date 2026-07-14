@@ -90,6 +90,7 @@ describe("playground chat", () => {
 
     const ctx = await chatCtx(member, { channel: "pg3", model: "m", messages: [{ role: "user", content: "x" }] });
     const r = await onRequestPost(ctx);
+    await drainWaits(ctx);            // 埋點（errlog）是背景寫入，要等它收尾
     expect(r.status).toBe(502);
     const j = await r.json();
     expect(j.error).toBe("upstream-error");
@@ -102,7 +103,11 @@ describe("playground chat", () => {
       .reply(500, '{"error":{"message":"secret provider detail"}}');
     const ctx2 = await chatCtx(admin, { channel: "pg3", model: "m", messages: [{ role: "user", content: "x" }] });
     const j2 = await (await onRequestPost(ctx2)).json();
+    await drainWaits(ctx2);
     expect(j2.detail).toContain("secret provider detail"); // 站長除錯用
+    // 埋點：上游 5xx 也留了站內錯誤（src=pg.upstream）
+    const errs = await env.DB.prepare("SELECT COUNT(*) c FROM errlog WHERE src='pg.upstream'").first();
+    expect(errs.c).toBe(2);
   });
 
   it("串流中途上游夾錯誤：已生成部分照存、會員拿到淨化訊息", async () => {

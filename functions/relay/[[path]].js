@@ -11,6 +11,7 @@ import { json } from "../../lib/site.js";
 import { memberKeyFrom, userFromKey, hasService } from "../../lib/auth.js";
 import { relayPageResponse } from "../../lib/relaypage.js";
 import { checkQuota, logReq, scanUsage } from "../../lib/quota.js";
+import { reportError } from "../../lib/observe.js";
 
 // 不轉發給上游的標頭：連線層的、Cloudflare 加的、還有夾帶會員身分的
 const DROP = /^(host|cookie|authorization|x-api-key|x-goog-api-key|content-length|connection|keep-alive|transfer-encoding|upgrade|expect|te|accept-encoding|cf-.*|x-forwarded-.*|x-real-ip|true-client-ip|sec-fetch-.*|origin|referer)$/;
@@ -105,10 +106,18 @@ export async function onRequest(context) {
     });
   } catch (e) {
     // 連不上上游也記一列（status:0）— 研究「上游到底多常掛」要靠這個
-    try { context.waitUntil(logReq(env, { user_id: user.id, svc: "relay", channel: slug, status: 0, dur_ms: Date.now() - t0 })); } catch (e2) {}
+    try {
+      context.waitUntil(logReq(env, { user_id: user.id, svc: "relay", channel: slug, status: 0, dur_ms: Date.now() - t0 }));
+      reportError(env, function (p) { context.waitUntil(p); }, "relay.upstream", e, { user_id: user.id, path: "/relay/" + slug });
+    } catch (e2) {}
     return json({ error: "upstream-unreachable", hint: "連不上上游（" + ch.name + "）", detail: String(e && e.message || e) }, 502);
   }
   const ttfb = Date.now() - t0;   // 上游回應標頭到手的時間（首位元組延遲）
+  if (resp.status >= 500) {
+    // 上游 5xx：轉發照舊（會員自己看得到），但站內也留一筆（觀測上游品質）
+    reportError(env, function (p) { context.waitUntil(p); }, "relay.upstream",
+      "上游回應 HTTP " + resp.status, { user_id: user.id, path: "/relay/" + slug });
+  }
 
   // 4) 記用量（背景執行，不拖慢回應；relay_calls 舊計數器保留）
   try {

@@ -159,6 +159,153 @@
     });
   }
 
+  /* ===== 分頁 2：站內錯誤（/api/admin/errors） ===== */
+  var errOffset = 0, errLoading = false, errLoaded = false;
+
+  function adminApi(path, opts){
+    opts = opts || {};
+    opts.headers = token ? { "Authorization": "Bearer " + token } : {};
+    opts.cache = "no-store";
+    return fetch(path, opts).then(function(r){
+      if(r.status === 401) throw { auth: true };
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function renderErrRow(r){
+    var tr = el("tr", "main");
+    var tdT = el("td", "nowrap mono", fmtTime(r.ts)); tdT.title = r.ts;
+    tr.appendChild(tdT);
+    tr.appendChild(el("td", "mono nowrap", r.src || "—"));
+    var tdM = el("td");
+    var line = el("div", "ua-line mono", r.msg || "—"); line.title = r.msg || "";
+    line.style.maxWidth = "420px";
+    tdM.appendChild(line);
+    tr.appendChild(tdM);
+    tr.appendChild(el("td", "mono", r.path || "—"));
+    var detail = null;
+    tr.addEventListener("click", function(){
+      if(detail){ detail.remove(); detail = null; return; }
+      detail = el("tr", "detail");
+      var td = document.createElement("td"); td.colSpan = 4;
+      var kv = el("div", "kv");
+      [["訊息", r.msg], ["細節", r.detail], ["會員編號", r.user_id], ["編號", "#" + r.id]].forEach(function(f){
+        if(f[1] === undefined || f[1] === null || f[1] === "") return;
+        kv.appendChild(el("span", "k", f[0]));
+        kv.appendChild(el("span", "v mono", String(f[1])));
+      });
+      td.appendChild(kv); detail.appendChild(td);
+      tr.parentNode.insertBefore(detail, tr.nextSibling);
+    });
+    return tr;
+  }
+
+  function loadErrors(reset){
+    if(errLoading) return;
+    errLoading = true;
+    if(reset) errOffset = 0;
+    adminApi("/api/admin/errors?limit=" + LIMIT + "&offset=" + errOffset).then(function(d){
+      if(reset) $("errBody").innerHTML = "";
+      (d.rows || []).forEach(function(r){ $("errBody").appendChild(renderErrRow(r)); });
+      errOffset += (d.rows || []).length;
+      $("errEmpty").classList.toggle("hidden", $("errBody").children.length > 0);
+      $("errMoreBtn").classList.toggle("hidden", errOffset >= d.total || (d.rows || []).length < LIMIT);
+      errLoading = false; errLoaded = true;
+    }).catch(function(err){
+      errLoading = false;
+      if(err && err.auth){ showGate(!!token); return; }
+      $("errEmpty").textContent = "讀取失敗，請稍後再試。";
+      $("errEmpty").classList.remove("hidden");
+    });
+  }
+
+  /* ===== 分頁 3：用量統計（/api/admin/stats） ===== */
+  var statDays = 7, statLoaded = false;
+
+  function pct(sorted, p){
+    if(!sorted.length) return null;
+    var i = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1));
+    return sorted[i];
+  }
+  function numFmt(n){ return (n == null) ? "—" : Number(n).toLocaleString(); }
+
+  function loadStats(){
+    adminApi("/api/admin/stats?days=" + statDays).then(function(d){
+      var total = 0, errs = 0, tin = 0, tout = 0;
+      (d.by_day || []).forEach(function(r){
+        total += r.n || 0; errs += r.errs || 0;
+        tin += r.tokens_in || 0; tout += r.tokens_out || 0;
+      });
+      $("uTotal").textContent = numFmt(total);
+      $("uErrs").textContent = numFmt(errs);
+      var durs = (d.durs || []).map(function(x){ return x.dur_ms; }).filter(function(x){ return x != null; }).sort(function(a,b){ return a-b; });
+      $("uP50").textContent = numFmt(pct(durs, .5));
+      $("uP95").textContent = numFmt(pct(durs, .95));
+      $("uTokens").textContent = numFmt(tin) + " / " + numFmt(tout);
+
+      var cb = $("chBody"); cb.innerHTML = "";
+      (d.by_channel || []).forEach(function(r){
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono", r.svc));
+        tr.appendChild(el("td", "mono", r.channel || "—"));
+        tr.appendChild(el("td", "mono", r.model || "—"));
+        tr.appendChild(el("td", null, numFmt(r.n)));
+        tr.appendChild(el("td", null, numFmt(r.errs)));
+        tr.appendChild(el("td", null, numFmt(r.avg_dur)));
+        tr.appendChild(el("td", null, numFmt(r.avg_ttfb)));
+        tr.appendChild(el("td", "mono", numFmt(r.tokens_in) + " / " + numFmt(r.tokens_out)));
+        cb.appendChild(tr);
+      });
+      $("chEmpty").classList.toggle("hidden", cb.children.length > 0);
+
+      var db = $("dayBody"); db.innerHTML = "";
+      (d.by_day || []).forEach(function(r){
+        var tr = el("tr");
+        tr.appendChild(el("td", "mono", r.d));
+        tr.appendChild(el("td", "mono", r.svc));
+        tr.appendChild(el("td", null, numFmt(r.n)));
+        tr.appendChild(el("td", null, numFmt(r.errs)));
+        tr.appendChild(el("td", null, numFmt(r.avg_dur)));
+        tr.appendChild(el("td", "mono", numFmt(r.tokens_in) + " / " + numFmt(r.tokens_out)));
+        db.appendChild(tr);
+      });
+      statLoaded = true;
+    }).catch(function(err){
+      if(err && err.auth){ showGate(!!token); return; }
+    });
+  }
+
+  /* ===== 分頁切換 ===== */
+  function switchTab(name){
+    [["Visits", "tabVisits", "paneVisits"], ["Errors", "tabErrors", "paneErrors"], ["Stats", "tabStats", "paneStats"]].forEach(function(t){
+      var on = t[0] === name;
+      $(t[1]).classList.toggle("on", on);
+      $(t[2]).classList.toggle("hidden", !on);
+    });
+    if(name === "Errors" && !errLoaded) loadErrors(true);
+    if(name === "Stats" && !statLoaded) loadStats();
+  }
+  $("tabVisits").addEventListener("click", function(){ switchTab("Visits"); });
+  $("tabErrors").addEventListener("click", function(){ switchTab("Errors"); });
+  $("tabStats").addEventListener("click", function(){ switchTab("Stats"); });
+
+  $("errRefreshBtn").addEventListener("click", function(){ loadErrors(true); });
+  $("errMoreBtn").addEventListener("click", function(){ loadErrors(false); });
+  $("errClearBtn").addEventListener("click", function(){
+    if(!confirm("清空全部錯誤紀錄？此動作無法復原。")) return;
+    adminApi("/api/admin/errors", { method: "DELETE" }).then(function(){ loadErrors(true); })
+      .catch(function(){ alert("清空失敗，請稍後再試。"); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".dayBtn"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll(".dayBtn"), function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      statDays = parseInt(b.getAttribute("data-days"), 10) || 7;
+      loadStats();
+    });
+  });
+
   /* ===== 綁定 ===== */
   $("gateForm").addEventListener("submit", function(e){
     e.preventDefault();

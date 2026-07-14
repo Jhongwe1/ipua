@@ -15,6 +15,7 @@ import { json } from "../../../lib/site.js";
 import { isAdminUser } from "../../../lib/auth.js";
 import { pgUser, cleanChat, buildUpstream, extractDelta, extractFull, extractUsage, chModels } from "../../../lib/playground.js";
 import { checkQuota } from "../../../lib/quota.js";
+import { reportError, reportErrorNow } from "../../../lib/observe.js";
 
 // 會員看的上游錯誤一律用「安全分類字」— 上游的原始錯誤內容（格式、文件連結、專案編號）
 // 會洩漏真實提供商身分，只有站長能看原文（除錯用）。
@@ -82,13 +83,17 @@ export async function onRequestPost(context) {
   try {
     resp = await fetch(up.url, { method: "POST", headers: up.headers, body: up.body });
   } catch (e) {
-    // fetch 例外訊息可能含主機名 → 只有站長看得到
+    // fetch 例外訊息可能含主機名 → 只有站長看得到；站內 errlog 留完整一筆
+    reportError(env, function (p) { context.waitUntil(p); }, "pg.upstream", e,
+      { user_id: user.id, path: "/playground/" + v.channel });
     return json({ error: "upstream-unreachable", hint: "連不上上游（" + ch.name + "）", conv: convId,
                   detail: isAdm ? String(e && e.message || e) : undefined }, 502);
   }
   if (!resp.ok) {
-    if (!isAdm) return json({ error: "upstream-error", hint: safeHint(resp.status), conv: convId }, 502);
     const detail = String(await resp.text().catch(function () { return ""; })).slice(0, 2000);
+    reportError(env, function (p) { context.waitUntil(p); }, "pg.upstream",
+      "上游回應 HTTP " + resp.status, { user_id: user.id, path: "/playground/" + v.channel, detail: detail });
+    if (!isAdm) return json({ error: "upstream-error", hint: safeHint(resp.status), conv: convId }, 502);
     return json({ error: "upstream-error", hint: "上游回應 " + resp.status, conv: convId, detail: detail }, 502);
   }
 
@@ -166,9 +171,15 @@ export async function onRequestPost(context) {
         "VALUES (?1,?2,'pg',?3,?4,?5,?6,?7,?8,?9)"
       ).bind(t2, user.id, v.channel, v.model, resp.status, Date.now() - t0, ttfb, usage.tokens_in, usage.tokens_out));
       await env.DB.batch(stmts);
-    } catch (e) {}
+    } catch (e) {
+      // 持久化失敗＝會員的回覆沒存進去 — 一定要留痕跡（已在 waitUntil 裡，直接 await）
+      await reportErrorNow(env, "pg.persist", e, { user_id: user.id, path: "/playground/" + v.channel });
+    }
     // 串流中途的錯誤訊息是上游原文（會露出提供商身分）→ 會員只看安全字，站長看原文
-    if (errMsg) await send({ error: "upstream-error", hint: isAdm ? errMsg : "上游發生錯誤，請稍後再試" });
+    if (errMsg) {
+      await reportErrorNow(env, "pg.stream", errMsg, { user_id: user.id, path: "/playground/" + v.channel });
+      await send({ error: "upstream-error", hint: isAdm ? errMsg : "上游發生錯誤，請稍後再試" });
+    }
     await send({ done: true });
     try { await writer.close(); } catch (e) {}
   })());

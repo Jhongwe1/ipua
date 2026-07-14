@@ -4,6 +4,7 @@
 import {
   getCookie, safeNext, miniPage, createSession, adminEmails, randToken
 } from "../../lib/auth.js";
+import { reportError } from "../../lib/observe.js";
 
 function b64urlJson(part) {
   try {
@@ -21,8 +22,14 @@ function fail(text) {
     "<p>" + text + "</p><a class=\"btn\" href=\"/auth/login\">再試一次</a> &nbsp; <a class=\"btn\" href=\"/\">回首頁</a>", 400);
 }
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
+  // 登入流程的失敗要進站內錯誤日誌（會員只會看到 miniPage，站長在 /logs 錯誤分頁看原因）
+  const oops = function (err, detail) {
+    reportError(env, function (p) { context.waitUntil(p); }, "oauth.callback", err,
+      { path: "/auth/callback", detail: detail });
+  };
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return fail("Google 登入尚未設定完成。");
   if (!env.DB) return fail("資料庫未連線。");
 
@@ -53,14 +60,21 @@ export async function onRequestGet({ request, env }) {
       })
     });
     tok = await r.json();
-    if (!r.ok) return fail("Google 拒絕了這次登入（" + (tok.error || r.status) + "）。redirect_uri 是否已在 Google Cloud 登記：" + url.origin + "/auth/callback");
+    if (!r.ok) {
+      oops("Google token 交換被拒（HTTP " + r.status + "）", JSON.stringify(tok).slice(0, 500));
+      return fail("Google 拒絕了這次登入（" + (tok.error || r.status) + "）。redirect_uri 是否已在 Google Cloud 登記：" + url.origin + "/auth/callback");
+    }
   } catch (e) {
+    oops(e);
     return fail("連不上 Google 伺服器，請稍後再試。");
   }
 
   const parts = String(tok.id_token || "").split(".");
   const claims = parts.length === 3 ? b64urlJson(parts[1]) : null;
-  if (!claims || !claims.sub || claims.aud !== env.GOOGLE_CLIENT_ID) return fail("身分資料驗證失敗。");
+  if (!claims || !claims.sub || claims.aud !== env.GOOGLE_CLIENT_ID) {
+    oops("id_token claims 驗證失敗（缺 sub 或 aud 不符）");
+    return fail("身分資料驗證失敗。");
+  }
   if (claims.email_verified === false) return fail("這個 Google 帳號的信箱未通過驗證。");
 
   const email = String(claims.email || "").toLowerCase();
