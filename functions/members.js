@@ -2,7 +2,8 @@
 // 非站長（未登入／一般會員）→ 顯示「僅限站長」擋板。站長 → 列出所有帳號，
 // 可核准／封鎖／解封／升降管理員／刪除。所有動作打 /api/admin/users。
 // 頁面最上方另有「Playground 開放給所有登入會員」全站開關（settings.pg_open，打 /api/admin/settings）。
-import { html, pageShell, getChrome } from "../lib/site.js";
+import { html, pageShell } from "../lib/site.js";
+import { getChromeFor } from "../lib/chrome.js";
 import { MEMBER_CSS, MEMBER_JS } from "../lib/memberui.js";
 
 const PAGE_CSS = `
@@ -32,8 +33,8 @@ const PAGE_CSS = `
   @media(max-width:560px){.u{flex-wrap:wrap}.u .acts{width:100%;justify-content:flex-start;padding-left:53px}}
 `;
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);
+export async function onRequestGet({ request, env }) {
+  const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
   const body =
     '<div id="root"><div class="gate"><div class="spin"></div></div></div>\n' +
     '<script>' + MEMBER_JS + '</script>\n' +

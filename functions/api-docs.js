@@ -2,7 +2,8 @@
 // 跟 /logs、/admin 同一套金鑰閘門模式：頁面本身只是空殼＋金鑰輸入框，
 // 文件內容要帶金鑰打 /api/admin/apidoc 才拿得到，再由瀏覽器端 marked 渲染 —
 // 沒金鑰的人看不到文件內容。noindex、選單也只有站長裝置才會長出入口。
-import { html, pageShell, getChrome } from "../lib/site.js";
+import { html, pageShell } from "../lib/site.js";
+import { getChromeFor } from "../lib/chrome.js";
 
 const GATE_CSS = `
   .gatecard{border:1px solid var(--line);border-radius:11px;padding:16px;background:var(--card);max-width:460px}
@@ -50,8 +51,8 @@ const GATE_JS = `
 })();
 `;
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);
+export async function onRequestGet({ request, env }) {
+  const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
   const body =
     '<style>' + GATE_CSS + '</style>\n' +
     '<div id="docGate" class="gatecard" hidden>\n' +

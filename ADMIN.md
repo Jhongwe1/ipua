@@ -237,6 +237,11 @@ menu 表空＝用內建預設（lib/site.js 的 DEFAULT_MENU；index.html 也留
 
 任何人都能用 Google 登入成為「會員」；會員功能（**API 中轉站** /relay、**VPN 訂閱** /vpn）要**站長核准**後才生效。站長信箱登入後自動是管理員，管理頁與站長 API 免金鑰（金鑰仍可用，給 curl／agent）。右上角是「帳號」鈕（登入／頭像下拉）；站長的編輯工具從舊的右上角 ✎ **搬進 ☰ 側邊欄「站長」區**了。
 
+**VPN 隱形（2026-07-14 v1.0.0）**：非站長且未被批准 vpn 服務的人**完全看不到 VPN 的存在** —
+側邊欄選單不渲染、`/vpn` 回靜態 SPA（跟打不存在的路徑一樣）、`/api/me` 不吐 vpn 欄位、
+頭像下拉也沒有 VPN 項。**必然代價**：已被批准但「還沒登入」的會員打 /vpn 一樣看到 SPA —
+請他先登入、再從頭像選單進 VPN。`/vpn/sub/<token>` 訂閱端點不受影響（token 即驗證）。
+
 ### 資料表（都在同一個 D1 `ipua-logs`）
 - `users`：會員（google_sub、email、status=pending/approved/blocked、is_admin、api_key_hash＝中轉金鑰的 SHA-256、vpn_token＝訂閱代碼、用量）。
 - `sessions`：登入狀態（cookie `ipua_sess` 存的是 SHA-256）。

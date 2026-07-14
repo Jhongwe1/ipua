@@ -40,7 +40,7 @@ export async function onRequest(context) {
   // 這個 catch-all 也接到「/relay」本身（零段落）— 那不是轉發，是會員操作頁。
   // （Pages 的 [[path]] 會蓋掉同層 index.js，所以頁面渲染改由這裡代理。）
   if (!segs.length) {
-    if (request.method === "GET" || request.method === "HEAD") return relayPageResponse(env);
+    if (request.method === "GET" || request.method === "HEAD") return relayPageResponse(env, request);
     return json({ error: "no-channel", hint: "網址要是 /relay/<管道>/<上游路徑>" }, 404);
   }
 

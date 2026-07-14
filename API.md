@@ -288,7 +288,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 
 ## 5b. 會員與帳號 API
 
-- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`、`usage`（2026-07-14 起：今日用量 `{ relay_today, relay_limit, pg_today, pg_limit }` — 只含有權限的服務、站長 limit 是 `null`＝無上限、兩服務都沒權限時整塊省略；UTC 午夜重置）。
+- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`relay_calls`、`usage`（2026-07-14 起：今日用量 `{ relay_today, relay_limit, pg_today, pg_limit }` — 只含有權限的服務、站長 limit 是 `null`＝無上限、兩服務都沒權限時整塊省略；UTC 午夜重置）。**`vpn_token`／`vpn_pulls` 只有「站長或被批准 vpn 服務」的人才有**（VPN 隱形：無權限者連鍵都不出現，`/vpn` 頁對他們也回 SPA、選單也不渲染）。
 - `POST /api/account/key` → `{ key, key_hint, key_at }`。**key 明文只在這次回應出現**，資料庫只存 SHA-256；重生會讓舊金鑰立即失效。`DELETE` 撤銷。
 - `POST /api/account/vpn-token` → `{ vpn_token }`。重生訂閱代碼（舊 `/vpn/sub/<舊token>` 立即失效）。
 - `POST /api/account/logout-all`（2026-07-14）→ `{ ok }`。**登出所有裝置**：刪光自己全部 session（含這一把）並清本機 cookie。手機不見／公用電腦忘了登出時用；頭像下拉選單也有這個鈕。

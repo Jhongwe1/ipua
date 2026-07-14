@@ -2,13 +2,14 @@
 // 只顯示已發佈（published）的頁面；草稿或不存在 → 404。
 // 外殼與文章頁同一套（pageShell）：☰ 側邊欄、日夜、EN/中、SEO 標籤都一致。
 import { marked } from "../../lib/vendor/marked.mjs";
-import { CANON, esc, html, timeAgo, pageShell, getChrome, SLUG_RE } from "../../lib/site.js";
+import { CANON, esc, html, timeAgo, pageShell, SLUG_RE } from "../../lib/site.js";
+import { getChromeFor } from "../../lib/chrome.js";
 
 const MD_OPTS = { gfm: true, breaks: true, async: false };
 
-export async function onRequestGet({ env, params }) {
+export async function onRequestGet({ request, env, params }) {
   const slug = String(params.slug || "").toLowerCase();
-  const chromeP = getChrome(env);
+  const chromeP = getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形），與頁面查詢並行
 
   let row = null;
   if (SLUG_RE.test(slug) && env.DB) {
@@ -18,7 +19,7 @@ export async function onRequestGet({ env, params }) {
       ).bind(slug).first();
     } catch (e) { /* 資料表尚未建立 → 當作找不到 */ }
   }
-  const chrome = await chromeP;
+  const chrome = (await chromeP).chrome;
   if (!row) return notFound(chrome);
 
   const canonical = CANON + "/p/" + row.slug;

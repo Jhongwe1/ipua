@@ -1,7 +1,8 @@
 // GET /admin — 文章管理後台（站長專用；支援 ?edit=編號、?new=分類 直達）。
 // 2026-07-09 起改用全站共用外殼（lib/site.js pageShell）：☰ 側邊欄、日夜、EN/中 與其他頁一致。
 // 頁面行為在 public/assets/admin.js；內文預覽直接吃外殼的 .prose 樣式，跟正式文章頁完全同一份。
-import { html, pageShell, getChrome, ADMIN_CSS } from "../lib/site.js";
+import { html, pageShell, ADMIN_CSS } from "../lib/site.js";
+import { getChromeFor } from "../lib/chrome.js";
 
 const PAGE_CSS = `
   .wrap{max-width:860px}
@@ -125,8 +126,8 @@ const BODY = `
 <script src="/assets/marked.js"><\/script>
 <script src="/assets/admin.js"><\/script>`;
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);
+export async function onRequestGet({ request, env }) {
+  const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
   return html(pageShell({
     title: "文章管理",
     desc: "站長專用的文章管理後台。",

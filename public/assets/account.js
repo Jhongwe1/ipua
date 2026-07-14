@@ -103,7 +103,8 @@
     // 項目清單以站長指定為準，不要擅自加（LLM playground 曾被加過又被要求移除）
     function link(text, href) { var a = el("a", "acct-item", text); a.href = href; panel.appendChild(a); }
     link(tx("API 中轉站", "API relay"), "/relay");
-    link(tx("VPN", "VPN"), "/vpn");
+    // VPN 隱形（2026-07-14）：站長或被批准 vpn 服務的人才看得到這個入口
+    if (me.is_admin || (me.services || []).indexOf("vpn") >= 0) link(tx("VPN", "VPN"), "/vpn");
     if (me.is_admin) {
       panel.appendChild(el("div", "acct-hr"));
       link(tx("成員管理", "Members"), "/members");

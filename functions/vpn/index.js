@@ -1,8 +1,12 @@
 // GET /vpn — VPN 訂閱（會員頁）。
-// 未登入 → 登入閘門；待核准 → 提示等核准；已核准 → 顯示專屬訂閱網址＋複製鈕＋一鍵匯入＋教學。
-// 站長另外看到「訂閱來源設定」卡：上游訂閱網址＋手動節點（存 settings 表）。
+// 2026-07-14 VPN 隱形：非（站長或已批准 vpn 服務）的訪客 — 包含匿名 — 一律回
+// 靜態 SPA（env.ASSETS），跟打一個不存在的路徑一模一樣：頁面「不存在」。
+// 已授權會員 → 顯示專屬訂閱網址＋複製鈕＋一鍵匯入＋教學；站長另有渠道管理卡。
 // 訂閱內容由 functions/vpn/sub/<token> 產生（驗 token→抓上游→轉發）。
-import { html, pageShell, getChrome } from "../../lib/site.js";
+// 註（記在 ADMIN.md）：已授權但「未登入」的人訪 /vpn 也看到 SPA — 隱形的必然代價；
+// 登入後從頭像選單進入。
+import { html, pageShell } from "../../lib/site.js";
+import { getChromeFor, canSeeVpn } from "../../lib/chrome.js";
 import { MEMBER_CSS, MEMBER_JS } from "../../lib/memberui.js";
 
 const PAGE_CSS = `
@@ -26,8 +30,19 @@ const PAGE_CSS = `
   ol.steps code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--field);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
 `;
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);
+export async function onRequestGet({ request, env }) {
+  const { chrome, user } = await getChromeFor(env, request);
+
+  // 隱形閘門：無權限 → 回根路徑的靜態 SPA（200），行為與「不存在的路徑」的 SPA fallback 相同。
+  // env.ASSETS.fetch 直接拿靜態檔、不會再進 Functions（不會撞 functions/index.js 的 302）。
+  if (!canSeeVpn(user, env)) {
+    try {
+      return await env.ASSETS.fetch(new Request(new URL("/", request.url), { headers: request.headers }));
+    } catch (e) {
+      return new Response("Not Found", { status: 404 });   // ASSETS 意外不可用 → 退 404（同樣不洩漏）
+    }
+  }
+
   const body =
     '<div id="root"><div class="gate"><div class="spin"></div></div></div>\n' +
     '<script>' + MEMBER_JS + '</script>\n' +

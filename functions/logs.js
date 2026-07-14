@@ -1,7 +1,8 @@
 // GET /logs — 訪客紀錄管理頁（站長專用）。
 // 2026-07-09 起改用全站共用外殼（lib/site.js pageShell）：☰ 側邊欄、日夜、EN/中 與其他頁一致。
 // 頁面行為在 public/assets/logs.js；資料要帶金鑰打 /api/logs 才拿得到，沒金鑰只會看到驗證畫面。
-import { html, pageShell, getChrome, ADMIN_CSS } from "../lib/site.js";
+import { html, pageShell, ADMIN_CSS } from "../lib/site.js";
+import { getChromeFor } from "../lib/chrome.js";
 
 const PAGE_CSS = `
   .wrap{max-width:980px}
@@ -139,8 +140,8 @@ const BODY = `
 </section>
 <script src="/assets/logs.js?v=20260714"><\/script>`;
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);
+export async function onRequestGet({ request, env }) {
+  const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
   return html(pageShell({
     title: "訪客紀錄",
     desc: "站長專用的訪客紀錄管理頁。",

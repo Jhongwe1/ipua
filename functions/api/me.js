@@ -4,6 +4,7 @@
 // pg_open 全員開放打開時，services 會多出 playground — 前端閘門靠這個清單放行。
 import { getSessionUser, isAdminUser, isApproved, userServices, canUsePlayground, json } from "../../lib/auth.js";
 import { usageSummary } from "../../lib/quota.js";
+import { canSeeVpn } from "../../lib/chrome.js";
 
 export async function onRequestGet({ request, env }) {
   const user = await getSessionUser(request, env);
@@ -25,9 +26,10 @@ export async function onRequestGet({ request, env }) {
       has_key: !!user.api_key_hash,
       key_hint: user.api_key_hint || "",
       key_at: user.api_key_at || null,
-      vpn_token: user.vpn_token || "",
+      // VPN 隱形（2026-07-14）：無 vpn 權限者連欄位都不出現（JSON.stringify 會丟掉 undefined）
+      vpn_token: canSeeVpn(user, env) ? (user.vpn_token || "") : undefined,
+      vpn_pulls: canSeeVpn(user, env) ? (user.vpn_pulls || 0) : undefined,
       relay_calls: user.relay_calls || 0,
-      vpn_pulls: user.vpn_pulls || 0,
       usage: usage || undefined
     }
   });
