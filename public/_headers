@@ -1,9 +1,17 @@
-# Cloudflare Pages 靜態資源的回應標頭（/api/* 由 Function 自行設定，不受此檔影響）
+# Cloudflare Pages 靜態資源的回應標頭（/api/* 與 SSR 頁由 Function 自行設定，不受此檔影響）
+#
+# CSP（2026-07-14 v1.0.0）：靜態 SPA（index.html）唯一的 inline script 用 sha256 放行 —
+# hash 由 tools/check-csp.mjs 產生與檢查（CI 防漂移：改了 inline script 忘了更新這裡會紅燈）。
+# connect-src 的外部主機＝IP 查詢工具實際會打的服務（ipify / ipapi / ipwho / httpbin）。
+# SSR 頁面的 CSP 用 per-request nonce，在 lib/site.js html() 單一入口蓋章。
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-elDqq/z4ThEJYtjHH/hKRZptjHRFSpKEV4GZe9ZBjVE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.ipify.org https://api6.ipify.org https://httpbin.org https://ipapi.co https://ipwho.is; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
 
 # assets 預設被快取 4 小時，改了 JS 會員要等很久才看到新版（2026-07-14 踩過：
 # 帳號選單的圖示改掉了、瀏覽器還顯示舊的）。縮成 10 分鐘＋引用處帶 ?v= 版本參數雙保險。

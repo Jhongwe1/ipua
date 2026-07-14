@@ -5,6 +5,7 @@
 // 會員完全看不到渠道 — 他們只有一條 /vpn/sub/<token>，伺服器把所有啟用中渠道的節點合併送出。
 import { json } from "../../../../../lib/site.js";
 import { adminOk, keyHint } from "../../../../../lib/auth.js";
+import { audit } from "../../../../../lib/observe.js";
 
 export const KINDS = { sub: 1, nodes: 1 };
 
@@ -50,7 +51,8 @@ export async function onRequestGet({ request, env }) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -65,6 +67,9 @@ export async function onRequestPost({ request, env }) {
     const r = await env.DB.prepare(
       "INSERT INTO vpn_channels (name,kind,url,nodes,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6)"
     ).bind(c.ch.name, c.ch.kind, c.ch.url || "", c.ch.nodes, c.ch.enabled, new Date().toISOString()).run();
+    // 稽核不落上游網址本體（那等於機場帳號），只記有無
+    audit(env, function (p) { context.waitUntil(p); }, request, "vpn.channel.create", r.meta.last_row_id,
+      c.ch.name + " kind=" + c.ch.kind + " 上游網址:" + (c.ch.url ? "有" : "無"));
     return json({ id: r.meta.last_row_id });
   } catch (e) {
     return json({ error: "insert-failed", detail: String(e && e.message || e) }, 500);

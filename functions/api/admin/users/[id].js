@@ -3,13 +3,16 @@
 //          或 { action: "set_services", services: ["relay","vpn","playground"] } — 分服務批准
 //          或 { action: "set_quota", quota_relay_day?, quota_pg_day?, rl_per_min? } — 個人配額覆寫
 //            （帶哪鍵改哪鍵；值可為 0 以上整數或 null＝清掉覆寫、回到全域預設）
+//          或 { action: "revoke_sessions" } — 撤銷該會員所有登入裝置（session 全刪；帳號狀態不動）
 //   DELETE 刪除帳號（連同其 session）
+// 所有變更都寫 audit_log（誰、何時、對誰、做了什麼）。
 // approve＝快速鍵：一次批准全部服務。set_services＝精準開關單一服務；
 // 給了任何服務就算 approved、全部收回就退回 pending（封鎖中的帳號只改清單、狀態不動）。
 // 護欄：站長不能封鎖／降級／刪除「自己」，也不能動到「環境變數指定的站長信箱」帳號
 //       （那些是設定裡的老大，只能改設定，不能在網頁上互鎖）。
 import { json } from "../../../../lib/site.js";
 import { adminOk, getSessionUser, adminEmails, SERVICES } from "../../../../lib/auth.js";
+import { audit } from "../../../../lib/observe.js";
 
 const ACTIONS = {
   approve:    { status: "approved", services: SERVICES.join(",") },
@@ -32,11 +35,13 @@ function isRootAdmin(row, env) {
   return adminEmails(env).indexOf(String(row.email || "").toLowerCase()) >= 0;
 }
 
-export async function onRequestPut({ request, env, params }) {
+export async function onRequestPut(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   const id = idOf(params);
   if (!id || !env.DB) return json({ error: "bad-id" }, 400);
+  const wu = function (p) { context.waitUntil(p); };
 
   let body = null;
   try { body = await request.json(); } catch (e) {}
@@ -64,11 +69,23 @@ export async function onRequestPut({ request, env, params }) {
     }
     if (!touched) return json({ error: "bad-input", hint: "set_quota 至少要帶一個配額鍵（quota_relay_day / quota_pg_day / rl_per_min）" }, 400);
   }
-  if (!act) return json({ error: "bad-action", hint: "action 要是 approve/block/unblock/make_admin/drop_admin/set_services/set_quota" }, 400);
+  if (body && body.action === "revoke_sessions") act = {};   // 不改欄位，於下方特別處理
+  if (!act) return json({ error: "bad-action", hint: "action 要是 approve/block/unblock/make_admin/drop_admin/set_services/set_quota/revoke_sessions" }, 400);
 
   const me = await getSessionUser(request, env);   // 金鑰身分時為 null（金鑰＝超級站長，不受自我保護限制）
   const target = await env.DB.prepare("SELECT * FROM users WHERE id=?1").bind(id).first();
   if (!target) return json({ error: "not-found" }, 404);
+
+  // 撤銷所有裝置：不動帳號狀態，只把該會員的 session 全刪（下次請求就要重新登入）
+  if (body.action === "revoke_sessions") {
+    try {
+      await env.DB.prepare("DELETE FROM sessions WHERE user_id=?1").bind(id).run();
+      audit(env, wu, request, "users.revoke_sessions", id, target.email);
+      return json({ ok: true });
+    } catch (e) {
+      return json({ error: "save-failed", detail: String(e && e.message || e) }, 500);
+    }
+  }
 
   const demoting = body.action === "block" || body.action === "drop_admin";
   if (demoting && isRootAdmin(target, env)) {
@@ -97,13 +114,19 @@ export async function onRequestPut({ request, env, params }) {
     if (body.action === "block") {
       await env.DB.prepare("DELETE FROM sessions WHERE user_id=?1").bind(id).run();   // 封鎖＝踢下線
     }
+    // 稽核：set_services 記清單、set_quota 記改了哪些鍵值，其餘記動作名（都不含秘密）
+    const detail = body.action === "set_services" ? (act.services || "（清空）")
+      : body.action === "set_quota" ? Object.keys(act).map(function (k) { return k + "=" + act[k]; }).join(",")
+      : "";
+    audit(env, wu, request, "users." + body.action, id, (target.email || "") + (detail ? " → " + detail : ""));
     return json({ ok: true });
   } catch (e) {
     return json({ error: "save-failed", detail: String(e && e.message || e) }, 500);
   }
 }
 
-export async function onRequestDelete({ request, env, params }) {
+export async function onRequestDelete(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   const id = idOf(params);
@@ -120,6 +143,7 @@ export async function onRequestDelete({ request, env, params }) {
       env.DB.prepare("DELETE FROM sessions WHERE user_id=?1").bind(id),
       env.DB.prepare("DELETE FROM users WHERE id=?1").bind(id)
     ]);
+    audit(env, function (p) { context.waitUntil(p); }, request, "users.delete", id, target.email || "");
     return json({ ok: true });
   } catch (e) {
     return json({ error: "delete-failed", detail: String(e && e.message || e) }, 500);

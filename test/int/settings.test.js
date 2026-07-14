@@ -1,8 +1,11 @@
 // PUT /api/admin/settings —「帶哪個鍵就改哪個鍵」語意（沒帶的絕不動）。
 import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
-import { onRequestPut } from "../../functions/api/admin/settings.js";
-import { makeCtx, envWith, ORIGIN } from "../helpers.js";
+import { onRequestPut as rawPut } from "../../functions/api/admin/settings.js";
+import { makeCtx, drainWaits, envWith, ORIGIN } from "../helpers.js";
+
+// settings PUT 會掛 audit 背景寫入 — 包一層自動排水
+const onRequestPut = async (ctx) => { const r = await rawPut(ctx); await drainWaits(ctx); return r; };
 
 const TOK = "admintok";
 function ctx(body) {

@@ -3,6 +3,7 @@
 //（帶空字串 ""＝清掉金鑰）。這樣改名／換網址不用重貼金鑰。
 import { json } from "../../../../../lib/site.js";
 import { adminOk } from "../../../../../lib/auth.js";
+import { audit } from "../../../../../lib/observe.js";
 import { cleanChannel, maskRow } from "./index.js";
 
 function idOf(params) {
@@ -10,7 +11,8 @@ function idOf(params) {
   return id > 0 ? id : null;
 }
 
-export async function onRequestPut({ request, env, params }) {
+export async function onRequestPut(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   const id = idOf(params);
@@ -30,6 +32,10 @@ export async function onRequestPut({ request, env, params }) {
       "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,models=?6,enabled=?7 WHERE id=?8"
     ).bind(slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.models, c.ch.enabled, id).run();
     const row = await env.DB.prepare("SELECT * FROM relay_channels WHERE id=?1").bind(id).first();
+    // 稽核不落金鑰本體，只記這次動作有沒有動到金鑰
+    const keyNote = c.ch.api_key === undefined ? "保留" : (c.ch.api_key ? "更新" : "清除");
+    audit(env, function (p) { context.waitUntil(p); }, request, "relay.channel.update", slug,
+      c.ch.name + " enabled=" + c.ch.enabled + " 金鑰:" + keyNote);
     return json({ row: maskRow(row) });
   } catch (e) {
     const msg = String(e && e.message || e);
@@ -38,13 +44,17 @@ export async function onRequestPut({ request, env, params }) {
   }
 }
 
-export async function onRequestDelete({ request, env, params }) {
+export async function onRequestDelete(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   const id = idOf(params);
   if (!id || !env.DB) return json({ error: "bad-id" }, 400);
   try {
+    const old = await env.DB.prepare("SELECT slug,name FROM relay_channels WHERE id=?1").bind(id).first();
     await env.DB.prepare("DELETE FROM relay_channels WHERE id=?1").bind(id).run();
+    audit(env, function (p) { context.waitUntil(p); }, request, "relay.channel.delete",
+      (old && old.slug) || id, (old && old.name) || "");
     return json({ ok: true });
   } catch (e) {
     return json({ error: "delete-failed", detail: String(e && e.message || e) }, 500);

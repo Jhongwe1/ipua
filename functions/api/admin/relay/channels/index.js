@@ -5,6 +5,7 @@
 // custom 與 openai 的差別只在顯示，驗證方式同樣是 Authorization: Bearer。
 import { json, SLUG_RE } from "../../../../../lib/site.js";
 import { adminOk, keyHint, randToken } from "../../../../../lib/auth.js";
+import { audit } from "../../../../../lib/observe.js";
 
 export const KINDS = { openai: 1, anthropic: 1, gemini: 1, custom: 1 };
 
@@ -86,7 +87,8 @@ export async function onRequestGet({ request, env }) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -105,6 +107,9 @@ export async function onRequestPost({ request, env }) {
         "INSERT INTO relay_channels (slug,name,kind,base_url,api_key,models,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
       ).bind(slug, c.ch.name, c.ch.kind, c.ch.base_url, c.ch.api_key || "", c.ch.models, c.ch.enabled,
              new Date().toISOString()).run();
+      // 稽核 summary 絕不含金鑰本體，只記「有沒有設」
+      audit(env, function (p) { context.waitUntil(p); }, request, "relay.channel.create", slug,
+        c.ch.name + " kind=" + c.ch.kind + " base=" + c.ch.base_url + " 金鑰:" + (c.ch.api_key ? "有" : "無"));
       return json({ id: r.meta.last_row_id, slug: slug, url: "/relay/" + slug });
     } catch (e) {
       const msg = String(e && e.message || e);

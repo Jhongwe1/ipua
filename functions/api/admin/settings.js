@@ -10,11 +10,13 @@
 import { json, BRAND } from "../../../lib/site.js";
 import { adminOk, pgOpenAll } from "../../../lib/auth.js";
 import { QUOTA_DEFAULTS } from "../../../lib/quota.js";
+import { audit } from "../../../lib/observe.js";
 
 const QUOTA_KEYS = ["quota_relay_day", "quota_pg_day", "rl_per_min"];
 const ALL_KEYS = ["brand", "pg_open", "relay_meter"].concat(QUOTA_KEYS);
 
-export async function onRequestPut({ request, env }) {
+export async function onRequestPut(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -57,6 +59,11 @@ export async function onRequestPut({ request, env }) {
       if (body.relay_meter) await del("relay_meter");   // 預設就是開
       else await put("relay_meter", "0");
     }
+
+    // 稽核：記「帶了哪些鍵、改成什麼」（站名與開關不是秘密，可直接記值）
+    const changed = ALL_KEYS.filter(function (k) { return k in body; })
+      .map(function (k) { return k + "=" + String(body[k]).slice(0, 60); }).join(", ");
+    audit(env, function (p) { context.waitUntil(p); }, request, "settings.put", "", changed);
 
     // 回傳改完的現況（settings 沒鍵時顯示內建預設）
     const res = await env.DB.prepare(

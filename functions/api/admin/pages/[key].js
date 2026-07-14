@@ -3,6 +3,7 @@
 // PUT 跟文章一樣是「整包覆蓋」：先 GET 拿舊資料、改完整包送回；slug 也可以在 PUT 裡改（等於搬家）。
 import { json, SLUG_RE } from "../../../../lib/site.js";
 import { adminOk } from "../../../../lib/auth.js";
+import { audit } from "../../../../lib/observe.js";
 import { cleanPage } from "./index.js";
 
 // 依 key 找頁面：回 row 或 null；key 不合法回 undefined
@@ -30,7 +31,8 @@ export async function onRequestGet({ request, env, params }) {
   }
 }
 
-export async function onRequestPut({ request, env, params }) {
+export async function onRequestPut(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -48,6 +50,8 @@ export async function onRequestPut({ request, env, params }) {
     await env.DB.prepare(
       "UPDATE pages SET slug=?1,title=?2,summary=?3,body_md=?4,status=?5,updated_at=?6 WHERE id=?7"
     ).bind(p.slug, p.title, p.summary, p.body_md, p.status, new Date().toISOString(), old.id).run();
+    audit(env, function (pr) { context.waitUntil(pr); }, request, "pages.update", p.slug,
+      p.title.slice(0, 80) + " [" + p.status + "]" + (old.slug !== p.slug ? "（原 " + old.slug + "）" : ""));
     return json({ id: old.id, slug: p.slug, status: p.status, url: "/p/" + p.slug });
   } catch (e) {
     const msg = String(e && e.message || e);
@@ -58,7 +62,8 @@ export async function onRequestPut({ request, env, params }) {
   }
 }
 
-export async function onRequestDelete({ request, env, params }) {
+export async function onRequestDelete(context) {
+  const { request, env, params } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -67,6 +72,8 @@ export async function onRequestDelete({ request, env, params }) {
     if (row === undefined) return json({ error: "bad-slug" }, 400);
     if (!row) return json({ error: "not-found" }, 404);
     await env.DB.prepare("DELETE FROM pages WHERE id=?1").bind(row.id).run();
+    audit(env, function (pr) { context.waitUntil(pr); }, request, "pages.delete", row.slug,
+      (row.title || "").slice(0, 80));
     return json({ ok: true });
   } catch (e) {
     return json({ error: "delete-failed", detail: String(e && e.message || e) }, 500);

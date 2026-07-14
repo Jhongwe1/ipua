@@ -24,3 +24,6 @@ jobs:
         run: |
           npm run apidoc
           git diff --exit-code lib/apidoc.js
+      # 靜態 CSP hash：index.html 的 inline script 改了、_headers 忘了跟上 → 紅燈
+      - name: CSP hash 防漂移
+        run: node tools/check-csp.mjs

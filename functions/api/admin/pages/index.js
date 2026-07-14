@@ -4,6 +4,7 @@
 // 驗證與其他站長 API 相同：Authorization: Bearer <LOGS_TOKEN>；localhost 開發免驗證。
 import { json, SLUG_RE } from "../../../../lib/site.js";
 import { adminOk } from "../../../../lib/auth.js";
+import { audit } from "../../../../lib/observe.js";
 
 // 欄位整理與上限（slug、title 必填；status 只收白名單值）。不合規回 null／錯誤字串。
 export function cleanPage(b) {
@@ -37,7 +38,8 @@ export async function onRequestGet({ request, env }) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -53,6 +55,8 @@ export async function onRequestPost({ request, env }) {
     const r = await env.DB.prepare(
       "INSERT INTO pages (slug,title,summary,body_md,status,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?6)"
     ).bind(p.slug, p.title, p.summary, p.body_md, p.status, now).run();
+    audit(env, function (pr) { context.waitUntil(pr); }, request, "pages.create", p.slug,
+      p.title.slice(0, 80) + " [" + p.status + "]");
     return json({ id: r.meta.last_row_id, slug: p.slug, status: p.status, url: "/p/" + p.slug });
   } catch (e) {
     const msg = String(e && e.message || e);

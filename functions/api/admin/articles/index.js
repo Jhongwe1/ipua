@@ -4,6 +4,7 @@
 // 驗證與 /api/logs 相同：Authorization: Bearer <LOGS_TOKEN>；localhost 開發免驗證。
 import { json } from "../../../../lib/site.js";
 import { adminOk } from "../../../../lib/auth.js";
+import { audit } from "../../../../lib/observe.js";
 
 // 表單欄位整理與上限（title 必填；category / status 只收白名單值）
 export function cleanArticle(b) {
@@ -35,7 +36,8 @@ export async function onRequestGet({ request, env }) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -52,6 +54,8 @@ export async function onRequestPost({ request, env }) {
       "VALUES (?1,?2,?3,?4,?5,?6,0,?7,?7,?8)"
     ).bind(a.category, a.title, a.summary, a.cover, a.body_md, a.status, now,
            a.status === "published" ? now : null).run();
+    audit(env, function (p) { context.waitUntil(p); }, request, "articles.create", r.meta.last_row_id,
+      a.title.slice(0, 80) + " [" + a.category + "/" + a.status + "]");
     return json({ id: r.meta.last_row_id, status: a.status });
   } catch (e) {
     return json({ error: "insert-failed", detail: String(e && e.message || e) }, 500);

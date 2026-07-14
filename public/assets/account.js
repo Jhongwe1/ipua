@@ -114,6 +114,16 @@
     out.type = "button";
     out.addEventListener("click", logout);
     panel.appendChild(out);
+    // 登出所有裝置（v1.0.0 計畫項目）：手機不見／公用電腦忘了登出時，一鍵撤銷全部 session
+    var outAll = el("button", "acct-item", tx("登出所有裝置", "Sign out everywhere"));
+    outAll.type = "button";
+    outAll.addEventListener("click", function () {
+      if (!confirm(tx("登出你在所有裝置上的登入狀態（包含這台）？", "Sign out on every device, including this one?"))) return;
+      fetch("/api/account/logout-all", { method: "POST" })
+        .then(function () { location.reload(); })
+        .catch(function () { location.reload(); });
+    });
+    panel.appendChild(outAll);
     document.body.appendChild(panel);
   }
   function togglePanel() {

@@ -1,7 +1,6 @@
-// lib/site.js 純函式（esc／json／fmtDate）。
-// html() 的 CSP nonce 蓋章測試在 Phase E 加；選單過濾在 Phase F 加。
+// lib/site.js 純函式（esc／json／fmtDate）＋ html() 的 CSP nonce 蓋章。
 import { describe, it, expect } from "vitest";
-import { esc, json, fmtDate } from "../../lib/site.js";
+import { esc, json, fmtDate, html } from "../../lib/site.js";
 
 describe("esc（HTML 跳脫）", () => {
   it("五個危險字元全跳", () => {
@@ -25,6 +24,30 @@ describe("json（API 回應工具）", () => {
   });
   it("自訂狀態碼", () => {
     expect(json({ error: "x" }, 403).status).toBe(403);
+  });
+});
+
+describe("html（SSR 單一入口：CSP nonce 蓋章）", () => {
+  it("每個 <script 標籤都被蓋上同一顆 nonce，且 CSP 標頭引用它", async () => {
+    const body = "<html><head><script>var a=1;</script></head>" +
+      '<body><script src="/assets/x.js"></script><p>&lt;script&gt; 這是跳脫過的字不該被蓋</p></body></html>';
+    const r = html(body);
+    const csp = r.headers.get("content-security-policy");
+    const m = csp.match(/'nonce-([^']+)'/);
+    expect(m).toBeTruthy();
+    const text = await r.text();
+    const stamped = text.match(/<script nonce="([^"]+)"/g) || [];
+    expect(stamped.length).toBe(2);                            // 兩個 script 都蓋到
+    expect(text).toContain('<script nonce="' + m[1] + '">');   // nonce 與標頭一致
+    expect(text).toContain("&lt;script&gt;");                  // 跳脫內容不受影響
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("report-uri /api/csp-report");
+    expect(r.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+  it("兩次呼叫 nonce 不同（per-request）", async () => {
+    const n = (r) => r.headers.get("content-security-policy").match(/'nonce-([^']+)'/)[1];
+    expect(n(html("<p>a</p>"))).not.toBe(n(html("<p>a</p>")));
   });
 });
 

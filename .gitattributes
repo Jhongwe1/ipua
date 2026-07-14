@@ -1,0 +1,12 @@
+# 全 repo 統一 LF：
+# 1. public/index.html 的 inline script 有 sha256 CSP hash —— hash 對位元組敏感，
+#    Windows 工作區（CRLF）與 CI（LF）若換行不同，hash 就對不上（tools/check-csp.mjs 會紅燈）。
+# 2. 順便消掉 Windows 上每次 commit 的 CRLF 轉換警告。
+* text=auto eol=lf
+
+# 圖片等二進位檔不要動
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.sqlite binary

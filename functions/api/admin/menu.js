@@ -3,10 +3,12 @@
 // 傳空陣列 = 清空自訂選單 = 還原成內建預設。整個覆蓋動作在同一個交易裡（batch），不會存到一半。
 import { json } from "../../../lib/site.js";
 import { adminOk } from "../../../lib/auth.js";
+import { audit } from "../../../lib/observe.js";
 
 const MAX_ITEMS = 60;
 
-export async function onRequestPut({ request, env }) {
+export async function onRequestPut(context) {
+  const { request, env } = context;
   const url = new URL(request.url);
   if (!(await adminOk(request, env, url))) return json({ error: "unauthorized" }, 401);
   if (!env.DB) return json({ error: "no-db" }, 500);
@@ -43,6 +45,8 @@ export async function onRequestPut({ request, env }) {
       ).bind(i, c.kind, c.label, c.label_en, c.url));
     });
     await env.DB.batch(stmts);
+    audit(env, function (p) { context.waitUntil(p); }, request, "menu.put", "",
+      clean.length ? clean.length + " 項" : "清空＝還原預設");
     return json({ ok: true, count: clean.length, custom: clean.length > 0 });
   } catch (e) {
     return json({ error: "save-failed", detail: String(e && e.message || e) }, 500);

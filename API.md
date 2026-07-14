@@ -291,6 +291,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 - `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`、`usage`（2026-07-14 起：今日用量 `{ relay_today, relay_limit, pg_today, pg_limit }` — 只含有權限的服務、站長 limit 是 `null`＝無上限、兩服務都沒權限時整塊省略；UTC 午夜重置）。
 - `POST /api/account/key` → `{ key, key_hint, key_at }`。**key 明文只在這次回應出現**，資料庫只存 SHA-256；重生會讓舊金鑰立即失效。`DELETE` 撤銷。
 - `POST /api/account/vpn-token` → `{ vpn_token }`。重生訂閱代碼（舊 `/vpn/sub/<舊token>` 立即失效）。
+- `POST /api/account/logout-all`（2026-07-14）→ `{ ok }`。**登出所有裝置**：刪光自己全部 session（含這一把）並清本機 cookie。手機不見／公用電腦忘了登出時用；頭像下拉選單也有這個鈕。
 - 以上都要登入 cookie；跨站請求被 Origin 擋（403 bad-origin）。
 
 ## 5c. 成員管理：/api/admin/users（分服務批准）
@@ -303,7 +304,9 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 - `PUT /api/admin/users/{id}` 本體三選一：
   - `{ "action": "approve" | "block" | "unblock" | "make_admin" | "drop_admin" }` — `approve` 是快速鍵＝**一次批准全部服務**；`unblock` 恢復原本的服務清單（清單是空的就退回 pending）。封鎖會同時把該會員踢下線（刪其 session）。
   - `{ "action": "set_services", "services": ["relay","vpn"] }` — **整包覆蓋**服務清單（只收合法服務名）。給了任何服務＝status 變 approved；全部收回＝退回 pending；封鎖中的帳號只改清單、狀態不動。
-  - `{ "action": "set_quota", "quota_relay_day": 100, "quota_pg_day": null, "rl_per_min": 10 }` — **個人配額覆寫**（2026-07-14）：帶哪鍵改哪鍵；值收 0 以上整數（0＝直接關掉該服務的額度）或 `null`＝清掉覆寫、回到全域預設（§5 的網站設定）。站長帳號不吃配額，設了也沒作用。網頁上在 /members 每個會員的「配額」鈕（有自訂會多顯示 `*`） |
+  - `{ "action": "set_quota", "quota_relay_day": 100, "quota_pg_day": null, "rl_per_min": 10 }` — **個人配額覆寫**（2026-07-14）：帶哪鍵改哪鍵；值收 0 以上整數（0＝直接關掉該服務的額度）或 `null`＝清掉覆寫、回到全域預設（§5 的網站設定）。站長帳號不吃配額，設了也沒作用。網頁上在 /members 每個會員的「配額」鈕（有自訂會多顯示 `*`）
+  - `{ "action": "revoke_sessions" }` —（2026-07-14）撤銷該會員**所有裝置**的登入狀態（session 全刪；帳號狀態與服務不動）。懷疑帳號被冒用時先用這個。
+- 所有變更（users／settings／channels／menu／articles／pages／media）都會寫 **audit_log**（誰、何時、對誰、做了什麼；summary 絕不含金鑰或上游網址本體）。
 - `DELETE /api/admin/users/{id}` 刪除帳號。
 - **護欄**：不能封鎖／降級／刪除自己；也不能動到 ADMIN_EMAILS 指定的站長帳號（回 403 protected — 要改就改環境變數）。
 

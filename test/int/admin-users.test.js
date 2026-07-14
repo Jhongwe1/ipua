@@ -1,9 +1,13 @@
 // /api/admin/users/<id> — 分服務批准語意、狀態耦合、自我保護與 root 站長護欄。
 import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
-import { onRequestPut, onRequestDelete } from "../../functions/api/admin/users/[id].js";
+import { onRequestPut as rawPut, onRequestDelete as rawDelete } from "../../functions/api/admin/users/[id].js";
 import { createSession } from "../../lib/auth.js";
-import { makeCtx, seedUser, seedAdmin, envWith, ORIGIN } from "../helpers.js";
+import { makeCtx, drainWaits, seedUser, seedAdmin, envWith, ORIGIN } from "../helpers.js";
+
+// 每次變更都會掛 audit 的背景寫入（waitUntil）— 包一層自動排水，測試結束前收乾淨
+const onRequestPut = async (ctx) => { const r = await rawPut(ctx); await drainWaits(ctx); return r; };
+const onRequestDelete = async (ctx) => { const r = await rawDelete(ctx); await drainWaits(ctx); return r; };
 
 const TOK = "admintok";
 const E = () => envWith({ LOGS_TOKEN: TOK });
