@@ -148,7 +148,8 @@ const MEMBERS_JS = `
     info.appendChild(el("div","st",
       tx("登入：","Login: ")+fmt(r.last_login)+
       "  ·  "+tx("中轉","relay")+" "+(r.relay_calls||0)+
-      "  ·  "+tx("訂閱","vpn")+" "+(r.vpn_pulls||0)));
+      "  ·  "+tx("訂閱","vpn")+" "+(r.vpn_pulls||0)+
+      "  ·  "+tx("今日","today")+" relay "+(r.relay_today||0)+" / pg "+(r.pg_today||0)));
     info.appendChild(svcChips(r));
     row.appendChild(info);
 
@@ -159,6 +160,12 @@ const MEMBERS_JS = `
       acts.appendChild(b);
     }
     var confirmDel=r.email;
+    if(!r.is_admin){
+      var qb=el("button","mbtn",tx("配額","Quota")+(hasQuotaOverride(r)?" *":""));
+      qb.title=tx("個人配額覆寫（* 表示有自訂）","Per-user quota override (* = customized)");
+      qb.addEventListener("click",function(){quotaDialog(r);});
+      acts.appendChild(qb);
+    }
     if(r.status==="pending")act(tx("批准全部服務","Approve all"),"approve","pri");
     if(r.status==="approved"&&!r.is_admin)act(tx("封鎖","Block"),"block");
     if(r.status==="blocked")act(tx("解封","Unblock"),"unblock","pri");
@@ -181,6 +188,57 @@ const MEMBERS_JS = `
     api("/api/admin/users/"+r.id,{method:"PUT",json:{action:action}})
       .then(function(){MU.flash(tx("已更新","Updated"));load();})
       .catch(function(e){btn.disabled=false;MU.flash(esc(e.message||e));});
+  }
+
+  function hasQuotaOverride(r){
+    return r.quota_relay_day!=null||r.quota_pg_day!=null||r.rl_per_min!=null;
+  }
+
+  // 個人配額編輯（overlay dialog，樣式沿用 /vpn 渠道編輯框）：
+  // 空欄＝用全域預設（settings 的 quota_* 鍵，沒設時是程式內建 500/200/30）。
+  function quotaDialog(r){
+    var ov=el("div");ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:120;display:flex;align-items:center;justify-content:center;padding:16px";
+    var dlg=el("div","card");dlg.style.cssText="max-width:420px;width:100%;margin:0;padding:18px;max-height:90vh;overflow:auto";
+    dlg.appendChild(el("div","nm",tx("配額 — ","Quota — ")+(r.name||r.email)));
+    dlg.appendChild(el("div","em",tx("空欄＝跟著全域預設；填 0 ＝ 直接停用該服務的配額。","Blank = global default; 0 = shut off that service.")));
+    var fields=[["quota_relay_day",tx("中轉每日請求數","Relay requests / day")],
+                ["quota_pg_day",tx("Playground 每日訊息數","Playground messages / day")],
+                ["rl_per_min",tx("每分鐘請求數（兩服務共用）","Requests / minute (both services)")]];
+    var inputs={};
+    fields.forEach(function(f){
+      var w=el("div");w.style.cssText="margin-top:12px";
+      var lb=el("div","em",f[1]);lb.style.cssText="font-weight:700;margin-bottom:4px";
+      w.appendChild(lb);
+      var inp=el("input");inp.type="text";inp.inputMode="numeric";inp.autocomplete="off";
+      inp.style.cssText="width:100%;border:1px solid var(--line);background:var(--field);color:var(--fg);border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box";
+      inp.placeholder=tx("（全域預設）","(global default)");
+      inp.value=r[f[0]]==null?"":String(r[f[0]]);
+      w.appendChild(inp);inputs[f[0]]=inp;
+      dlg.appendChild(w);
+    });
+    var btns=el("div");btns.style.cssText="display:flex;gap:8px;justify-content:flex-end;margin-top:16px";
+    var cancel=el("button","mbtn",tx("取消","Cancel"));
+    var save=el("button","mbtn pri",tx("儲存","Save"));
+    btns.appendChild(cancel);btns.appendChild(save);dlg.appendChild(btns);
+    ov.appendChild(dlg);document.body.appendChild(ov);
+    function close(){ov.remove();}
+    cancel.addEventListener("click",close);
+    ov.addEventListener("click",function(e){if(e.target===ov)close();});
+    save.addEventListener("click",function(){
+      var payload={action:"set_quota"};
+      var bad=null;
+      fields.forEach(function(f){
+        var v=inputs[f[0]].value.trim();
+        if(v===""){payload[f[0]]=null;return;}
+        if(!/^\\d+$/.test(v)){bad=f[1];return;}
+        payload[f[0]]=parseInt(v,10);
+      });
+      if(bad){MU.flash(tx("「"+bad+"」要是 0 以上的整數或留空","Must be a non-negative integer or blank"));return;}
+      save.disabled=true;save.textContent=tx("儲存中…","Saving…");
+      api("/api/admin/users/"+r.id,{method:"PUT",json:payload})
+        .then(function(){close();MU.flash(tx("配額已更新","Quota updated"));load();})
+        .catch(function(e){save.disabled=false;save.textContent=tx("儲存","Save");MU.flash(esc(e.message||e));});
+    });
   }
 
   // 分服務批准：每個會員三顆服務開關（實心＝已批准），點一下切換。

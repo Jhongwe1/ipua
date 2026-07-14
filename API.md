@@ -248,12 +248,16 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 
 ### 網站設定：PUT /api/admin/settings
 
-**本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, pg_open }`（改完的現況）。
+**本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter }`（改完的現況；配額鍵沒設過時顯示內建預設）。
 
 | 鍵 | 說明 |
 |---|---|
 | `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
 | `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 LLM Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
+| `quota_relay_day` | 中轉每日請求數的**全域預設**（正整數）；`null` ＝ 回到內建預設 500。個人覆寫（§5c 的 `set_quota`）優先於這個值；**站長完全不吃配額** |
+| `quota_pg_day` | Playground 每日訊息數的全域預設；`null` ＝ 內建預設 200 |
+| `rl_per_min` | 每分鐘請求數上限（滾動 60 秒、中轉＋Playground 合併計）；`null` ＝ 內建預設 30 |
+| `relay_meter` | `false` ＝ 中轉退回**純直通**（不掃 usage、不寫 req_log）— 計量出怪問題時的免部署保險；`true` ＝ 恢復計量（預設）。平常不要動 |
 
 ```bat
 curl -X PUT https://uaip.cc.cd/api/admin/settings ^
@@ -279,7 +283,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 
 ## 5b. 會員與帳號 API
 
-- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`。
+- `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；站長固定是全部）、`has_key`、`key_hint`、`key_at`、`vpn_token`、`relay_calls`、`vpn_pulls`、`usage`（2026-07-14 起：今日用量 `{ relay_today, relay_limit, pg_today, pg_limit }` — 只含有權限的服務、站長 limit 是 `null`＝無上限、兩服務都沒權限時整塊省略；UTC 午夜重置）。
 - `POST /api/account/key` → `{ key, key_hint, key_at }`。**key 明文只在這次回應出現**，資料庫只存 SHA-256；重生會讓舊金鑰立即失效。`DELETE` 撤銷。
 - `POST /api/account/vpn-token` → `{ vpn_token }`。重生訂閱代碼（舊 `/vpn/sub/<舊token>` 立即失效）。
 - 以上都要登入 cookie；跨站請求被 Origin 擋（403 bad-origin）。
@@ -290,10 +294,11 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 
 > `playground` 另有**全站開關**（`PUT /api/admin/settings` 的 `pg_open`，見 §5）：開啟時所有登入會員都能用 Playground、不看個人批准（`/api/me` 的 `services` 也會多出 playground）；關閉才回到這裡的逐人批准。relay 與 vpn 沒有全站開關。
 
-- `GET` → `{ rows }`：每筆 `id`、`email`、`name`、`picture`、`status`、`services`（逗號分隔字串）、`is_admin`、`relay_calls`、`vpn_pulls`、`last_login`、`created_at`；排序 pending 在前。
-- `PUT /api/admin/users/{id}` 本體二選一：
+- `GET` → `{ rows }`：每筆 `id`、`email`、`name`、`picture`、`status`、`services`（逗號分隔字串）、`is_admin`、`relay_calls`、`vpn_pulls`、`last_login`、`created_at`、配額覆寫欄（`quota_relay_day`、`quota_pg_day`、`rl_per_min`；`null`＝用全域）、今日用量（`relay_today`、`pg_today`，UTC 日窗）；排序 pending 在前。
+- `PUT /api/admin/users/{id}` 本體三選一：
   - `{ "action": "approve" | "block" | "unblock" | "make_admin" | "drop_admin" }` — `approve` 是快速鍵＝**一次批准全部服務**；`unblock` 恢復原本的服務清單（清單是空的就退回 pending）。封鎖會同時把該會員踢下線（刪其 session）。
   - `{ "action": "set_services", "services": ["relay","vpn"] }` — **整包覆蓋**服務清單（只收合法服務名）。給了任何服務＝status 變 approved；全部收回＝退回 pending；封鎖中的帳號只改清單、狀態不動。
+  - `{ "action": "set_quota", "quota_relay_day": 100, "quota_pg_day": null, "rl_per_min": 10 }` — **個人配額覆寫**（2026-07-14）：帶哪鍵改哪鍵；值收 0 以上整數（0＝直接關掉該服務的額度）或 `null`＝清掉覆寫、回到全域預設（§5 的網站設定）。站長帳號不吃配額，設了也沒作用。網頁上在 /members 每個會員的「配額」鈕（有自訂會多顯示 `*`） |
 - `DELETE /api/admin/users/{id}` 刪除帳號。
 - **護欄**：不能封鎖／降級／刪除自己；也不能動到 ADMIN_EMAILS 指定的站長帳號（回 403 protected — 要改就改環境變數）。
 
@@ -338,6 +343,8 @@ Authorization: Bearer uak-你的金鑰
 - 金鑰放哪都收：`Authorization: Bearer`、`x-api-key`、`x-goog-api-key`、`?key=`（配合各家 SDK）。
 - 路徑照上游原本的填（中轉只換金鑰不改路徑）；回應串流直通。`model` 參數也原樣轉發 — 填管道 `models` 清單裡的名稱即可。
 - 未帶金鑰 401、金鑰無效 401、帳號未被批准 relay 服務 403、管道不存在或停用 404、上游連不上 502。
+- **配額（2026-07-14）**：超過每日額度回 `429 { error:"quota-exceeded", hint, used, limit, reset }`、請求太快回 `429 { error:"rate-limited", … }`，都帶 `Retry-After` 標頭（秒）。額度＝個人覆寫 → 全域設定 → 內建預設（中轉 500/日、每分鐘 30）；**站長完全豁免**。今日用量顯示在 /relay 頁與 `GET /api/me` 的 `usage`。
+- **計量**：伺服器順流掃「回應」尾端的 `usage`／`model` 記進 req_log（延遲、token 數；研究數據用）— 只看上游回應、絕不緩衝或解析你送出的內容；會員中斷連線時上游立即取消。
 
 ## 5e. VPN 訂閱（多渠道）
 
@@ -425,6 +432,7 @@ Authorization: Bearer uak-你的金鑰
 | 403 | bad-origin / not-approved / blocked / protected | 跨站被擋／該服務未被批准或帳號被封鎖／受保護的站長帳號 |
 | 404 | not-found / unknown-channel | 內容不存在（或公開 API 查到的是草稿）／中轉管道不存在 |
 | 409 | slug-taken | 自訂頁面或管道的 slug 已被使用 |
+| 429 | quota-exceeded / rate-limited | 超過每日額度／請求太快（中轉與 Playground；帶 `Retry-After` 標頭與 `used`/`limit`/`reset` 欄位；站長豁免） |
 | 502 | upstream-unreachable / upstream-error / no-upstream-key | 中轉／VPN／Playground 上游連不上或回錯；渠道沒設上游金鑰 |
 | 413 | too-large | 圖片超過 1.8MB |
 | 415 | bad-type | 圖片格式不是 webp / jpeg / png / gif |

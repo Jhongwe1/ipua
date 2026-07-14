@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import { env } from "cloudflare:test";
 import { onRequestGet } from "../../functions/api/me.js";
 import { createSession } from "../../lib/auth.js";
+import { logReq } from "../../lib/quota.js";
 import { makeCtx, seedUser, seedAdmin, giveKey, ORIGIN } from "../helpers.js";
 
 async function meCtx(user) {
@@ -53,5 +54,23 @@ describe("/api/me", () => {
     const u = await seedUser({ status: "approved", services: "" });
     const j = await (await onRequestGet(await meCtx(u))).json();
     expect(j.user.services).toContain("playground");
+  });
+
+  it("usage 區塊：只含有權限的服務；今日計數正確；個人覆寫反映在 limit", async () => {
+    const u = await seedUser({ status: "approved", services: "relay", quota_relay_day: 9 });
+    await logReq(env, { user_id: u.id, svc: "relay", status: 200 });
+    await logReq(env, { user_id: u.id, svc: "relay", status: 200 });
+    const j = await (await onRequestGet(await meCtx(u))).json();
+    expect(j.user.usage).toEqual({ relay_today: 2, relay_limit: 9 });   // 沒 pg 權限 → pg 鍵省略
+  });
+
+  it("usage：站長 limit=null（無上限）；兩服務都沒權限 → 整塊省略", async () => {
+    const a = await seedAdmin();
+    const ja = await (await onRequestGet(await meCtx(a))).json();
+    expect(ja.user.usage.relay_limit).toBeNull();
+    expect(ja.user.usage.pg_limit).toBeNull();
+    const p = await seedUser({ status: "pending" });
+    const jp = await (await onRequestGet(await meCtx(p))).json();
+    expect(jp.user.usage).toBeUndefined();
   });
 });

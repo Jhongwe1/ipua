@@ -3,12 +3,15 @@
 // services＝被批准的服務清單（分服務批准；站長固定是全部）。
 // pg_open 全員開放打開時，services 會多出 playground — 前端閘門靠這個清單放行。
 import { getSessionUser, isAdminUser, isApproved, userServices, canUsePlayground, json } from "../../lib/auth.js";
+import { usageSummary } from "../../lib/quota.js";
 
 export async function onRequestGet({ request, env }) {
   const user = await getSessionUser(request, env);
   if (!user) return json({ user: null });
   const services = userServices(user, env);
   if (services.indexOf("playground") < 0 && await canUsePlayground(user, env)) services.push("playground");
+  // 今日用量摘要（只含有權限的服務；站長 limit=null＝無上限；沒權限＝整塊省略）
+  const usage = await usageSummary(env, user, services);
   return json({
     user: {
       id: user.id,
@@ -24,7 +27,8 @@ export async function onRequestGet({ request, env }) {
       key_at: user.api_key_at || null,
       vpn_token: user.vpn_token || "",
       relay_calls: user.relay_calls || 0,
-      vpn_pulls: user.vpn_pulls || 0
+      vpn_pulls: user.vpn_pulls || 0,
+      usage: usage || undefined
     }
   });
 }

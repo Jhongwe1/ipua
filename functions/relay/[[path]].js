@@ -10,6 +10,7 @@
 import { json } from "../../lib/site.js";
 import { memberKeyFrom, userFromKey, hasService } from "../../lib/auth.js";
 import { relayPageResponse } from "../../lib/relaypage.js";
+import { checkQuota, logReq, scanUsage } from "../../lib/quota.js";
 
 // 不轉發給上游的標頭：連線層的、Cloudflare 加的、還有夾帶會員身分的
 const DROP = /^(host|cookie|authorization|x-api-key|x-goog-api-key|content-length|connection|keep-alive|transfer-encoding|upgrade|expect|te|accept-encoding|cf-.*|x-forwarded-.*|x-real-ip|true-client-ip|sec-fetch-.*|origin|referer)$/;
@@ -51,11 +52,21 @@ export async function onRequest(context) {
     return json({ error: "not-approved", hint: "帳號還沒被站長批准使用中轉站，批准後金鑰才會生效" }, 403);
   }
 
-  // 2) 找管道
+  // 1.5) 配額（站長豁免；超額 429＋Retry-After，見 lib/quota.js）
+  const quota = await checkQuota(env, user, "relay");
+  if (!quota.ok) return quota.resp;
+
+  // 2) 找管道（順便讀計量開關 relay_meter：settings 設 '0' ＝ 免部署退回純直通的保險）
   const slug = String(segs[0]).toLowerCase();
-  let ch = null;
+  let ch = null, meter = true;
   try {
-    ch = await env.DB.prepare("SELECT * FROM relay_channels WHERE slug=?1 AND enabled=1").bind(slug).first();
+    const res = await env.DB.batch([
+      env.DB.prepare("SELECT * FROM relay_channels WHERE slug=?1 AND enabled=1").bind(slug),
+      env.DB.prepare("SELECT v FROM settings WHERE k='relay_meter'")
+    ]);
+    ch = (res[0].results || [])[0] || null;
+    const m = (res[1].results || [])[0];
+    if (m && m.v === "0") meter = false;
   } catch (e) {}
   if (!ch) return json({ error: "unknown-channel", hint: "沒有「" + slug + "」這個管道（或已停用）" }, 404);
 
@@ -84,6 +95,7 @@ export async function onRequest(context) {
     else fh.set("authorization", "Bearer " + ch.api_key);   // openai / custom（含本地 AI 的 OpenAI 相容介面）
   }
 
+  const t0 = Date.now();
   let resp = null;
   try {
     resp = await fetch(target, {
@@ -92,21 +104,58 @@ export async function onRequest(context) {
       body: (request.method === "GET" || request.method === "HEAD") ? undefined : request.body
     });
   } catch (e) {
+    // 連不上上游也記一列（status:0）— 研究「上游到底多常掛」要靠這個
+    try { context.waitUntil(logReq(env, { user_id: user.id, svc: "relay", channel: slug, status: 0, dur_ms: Date.now() - t0 })); } catch (e2) {}
     return json({ error: "upstream-unreachable", hint: "連不上上游（" + ch.name + "）", detail: String(e && e.message || e) }, 502);
   }
+  const ttfb = Date.now() - t0;   // 上游回應標頭到手的時間（首位元組延遲）
 
-  // 4) 記用量（背景執行，不拖慢回應）
+  // 4) 記用量（背景執行，不拖慢回應；relay_calls 舊計數器保留）
   try {
     context.waitUntil(
       env.DB.prepare("UPDATE users SET relay_calls = relay_calls + 1 WHERE id=?1").bind(user.id).run().catch(function () {})
     );
   } catch (e) {}
 
-  // 5) 原樣回傳（串流直通）。fetch 已解壓縮，所以 content-encoding/length 不能照抄；
+  // 5) 原樣回傳。fetch 已解壓縮，所以 content-encoding/length 不能照抄；
   //    上游的 set-cookie 也不該落到會員的瀏覽器。
   const oh = new Headers(resp.headers);
   oh.delete("set-cookie"); oh.delete("content-encoding"); oh.delete("content-length");
   oh.set("cache-control", "no-store");
   cors(oh);
+
+  // 5.5) 計量 pump（2026-07-14）：讀一次上游、原樣寫給客戶端，同時用 64KB 滑動窗
+  //      掃「回應」尾端的 usage／model（絕不碰會員的請求本體）。
+  //      刻意不用 tee()：客戶端中斷時 tee 的另一支會把上游讀完＝上游繼續生成＝燒錢；
+  //      pump 在寫入失敗（客戶端斷線）當下就 cancel 上游。
+  //      relay_meter='0' 或 pump 建立失敗 → 退回上面的純直通行為。
+  if (meter && resp.body) {
+    try {
+      const pump = new TransformStream();
+      const writer = pump.writable.getWriter();
+      const reader = resp.body.getReader();
+      const status = resp.status;
+      context.waitUntil((async function () {
+        let tail = "";
+        const dec = new TextDecoder();
+        while (true) {
+          let step = null;
+          try { step = await reader.read(); } catch (e) { break; }
+          if (step.done) break;
+          try { await writer.write(step.value); }
+          catch (e) { try { reader.cancel(); } catch (e2) {} break; }   // 客戶端斷線 → 立刻停抓上游
+          tail += dec.decode(step.value, { stream: true });
+          if (tail.length > 65536) tail = tail.slice(-65536);
+        }
+        try { await writer.close(); } catch (e) {}
+        const u = scanUsage(tail);
+        await logReq(env, {
+          user_id: user.id, svc: "relay", channel: slug, model: u.model, status: status,
+          dur_ms: Date.now() - t0, ttfb_ms: ttfb, tokens_in: u.tokens_in, tokens_out: u.tokens_out
+        });
+      })());
+      return new Response(pump.readable, { status: resp.status, statusText: resp.statusText, headers: oh });
+    } catch (e) { /* pump 建立失敗 → 退回純直通 */ }
+  }
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: oh });
 }

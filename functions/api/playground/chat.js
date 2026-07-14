@@ -13,7 +13,8 @@
 // 上游一開始就失敗時不進 SSE，直接回 JSON 錯誤（body 會帶 conv，前端才不會重複開對話）。
 import { json } from "../../../lib/site.js";
 import { isAdminUser } from "../../../lib/auth.js";
-import { pgUser, cleanChat, buildUpstream, extractDelta, extractFull, chModels } from "../../../lib/playground.js";
+import { pgUser, cleanChat, buildUpstream, extractDelta, extractFull, extractUsage, chModels } from "../../../lib/playground.js";
+import { checkQuota } from "../../../lib/quota.js";
 
 // 會員看的上游錯誤一律用「安全分類字」— 上游的原始錯誤內容（格式、文件連結、專案編號）
 // 會洩漏真實提供商身分，只有站長能看原文（除錯用）。
@@ -32,6 +33,10 @@ export async function onRequestPost(context) {
   if (who.err) return who.err;
   const user = who.user;
   const isAdm = isAdminUser(user, env);
+
+  // 配額：一定要在「任何 D1 寫入之前」— 429 時連對話都不會建（站長豁免）
+  const quota = await checkQuota(env, user, "pg");
+  if (!quota.ok) return quota.resp;
 
   let body = null;
   try { body = await request.json(); } catch (e) {}
@@ -72,6 +77,7 @@ export async function onRequestPost(context) {
 
   // 打上游
   const up = buildUpstream(ch, v.model, v.messages);
+  const t0 = Date.now();
   let resp = null;
   try {
     resp = await fetch(up.url, { method: "POST", headers: up.headers, body: up.body });
@@ -97,6 +103,8 @@ export async function onRequestPost(context) {
       .catch(function () { gone = true; });
   }
   const ct = String(resp.headers.get("content-type") || "");
+  const ttfb = Date.now() - t0;             // 上游回應標頭到手的時間
+  const usage = { tokens_in: null, tokens_out: null };   // 上游回報的 token 用量（掃不到＝NULL）
 
   context.waitUntil((async function () {
     let full = "", errMsg = null;
@@ -105,6 +113,7 @@ export async function onRequestPost(context) {
       if (ct.indexOf("json") >= 0 && ct.indexOf("event-stream") < 0) {
         // 上游不理 stream:true、直接回整包 JSON → 一次送完（相容便宜渠道的怪行為）
         const j = await resp.json();
+        extractUsage(ch.kind, j, usage);
         full = extractFull(ch.kind, j) || "";
         if (full) await send({ d: full });
         else errMsg = "上游沒有回覆內容";
@@ -126,6 +135,7 @@ export async function onRequestPost(context) {
             if (!payload || payload === "[DONE]") continue;
             let j = null;
             try { j = JSON.parse(payload); } catch (e) { continue; }
+            extractUsage(ch.kind, j, usage);
             let t = "";
             try { t = extractDelta(ch.kind, j); }
             catch (e) { errMsg = String(e && e.message || e); break readLoop; }
@@ -150,6 +160,11 @@ export async function onRequestPost(context) {
       stmts.push(env.DB.prepare(
         "UPDATE pg_conversations SET updated_at=?1, channel=?2, model=?3 WHERE id=?4"
       ).bind(t2, v.channel, v.model, convId));
+      // 計量：req_log 併進同一個 batch（配額計數與延遲/成本研究數據共用）
+      stmts.push(env.DB.prepare(
+        "INSERT INTO req_log (ts,user_id,svc,channel,model,status,dur_ms,ttfb_ms,tokens_in,tokens_out) " +
+        "VALUES (?1,?2,'pg',?3,?4,?5,?6,?7,?8,?9)"
+      ).bind(t2, user.id, v.channel, v.model, resp.status, Date.now() - t0, ttfb, usage.tokens_in, usage.tokens_out));
       await env.DB.batch(stmts);
     } catch (e) {}
     // 串流中途的錯誤訊息是上游原文（會露出提供商身分）→ 會員只看安全字，站長看原文

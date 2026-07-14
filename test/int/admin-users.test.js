@@ -94,6 +94,32 @@ describe("快速動作", () => {
   });
 });
 
+describe("set_quota（個人配額覆寫）", () => {
+  it("帶哪鍵改哪鍵；null＝清掉覆寫", async () => {
+    const u = await seedUser({ status: "approved", services: "relay" });
+    let r = await onRequestPut(putCtx(u.id, { action: "set_quota", quota_relay_day: 5, rl_per_min: 2 }));
+    expect(r.status).toBe(200);
+    let row = await getUser(u.id);
+    expect(row.quota_relay_day).toBe(5);
+    expect(row.rl_per_min).toBe(2);
+    expect(row.quota_pg_day).toBeNull();          // 沒帶的鍵不動
+    r = await onRequestPut(putCtx(u.id, { action: "set_quota", quota_relay_day: null }));
+    expect(r.status).toBe(200);
+    row = await getUser(u.id);
+    expect(row.quota_relay_day).toBeNull();       // 清掉覆寫
+    expect(row.rl_per_min).toBe(2);               // 其他鍵不動
+  });
+  it("0 是合法值（＝直接關掉該服務）；負數／小數／亂字串 → 400；一鍵都沒帶 → 400", async () => {
+    const u = await seedUser();
+    expect((await onRequestPut(putCtx(u.id, { action: "set_quota", quota_pg_day: 0 }))).status).toBe(200);
+    expect((await getUser(u.id)).quota_pg_day).toBe(0);
+    for (const bad of [-1, 1.5, "abc"]) {
+      expect((await onRequestPut(putCtx(u.id, { action: "set_quota", quota_pg_day: bad }))).status).toBe(400);
+    }
+    expect((await onRequestPut(putCtx(u.id, { action: "set_quota" }))).status).toBe(400);
+  });
+});
+
 describe("護欄", () => {
   it("root 站長（ADMIN_EMAILS 內建信箱）不能被封鎖／降級／刪除", async () => {
     const root = await seedAdmin();   // zwwe1f@gmail.com＝內建站長信箱

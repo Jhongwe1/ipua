@@ -52,6 +52,28 @@ describe("settings 帶哪鍵改哪鍵", () => {
     expect(await getKey("pg_open")).toBeNull();
   });
 
+  it("配額全域鍵：正整數存入、null 刪鍵回內建預設、壞值 400", async () => {
+    let j = await (await onRequestPut(ctx({ quota_relay_day: 100, rl_per_min: 5 }))).json();
+    expect(j.quota_relay_day).toBe(100);
+    expect(j.rl_per_min).toBe(5);
+    expect(j.quota_pg_day).toBe(200);                    // 沒帶＝內建預設
+    expect((await getKey("quota_relay_day")).v).toBe("100");
+    j = await (await onRequestPut(ctx({ quota_relay_day: null }))).json();
+    expect(j.quota_relay_day).toBe(500);                 // 刪鍵回內建
+    expect(await getKey("quota_relay_day")).toBeNull();
+    expect((await onRequestPut(ctx({ quota_pg_day: 0 }))).status).toBe(400);     // 全域不收 0（會鎖死大家）
+    expect((await onRequestPut(ctx({ rl_per_min: "abc" }))).status).toBe(400);
+  });
+
+  it("relay_meter：false 存 '0'（退回純直通）、true 刪鍵（預設開）", async () => {
+    let j = await (await onRequestPut(ctx({ relay_meter: false }))).json();
+    expect(j.relay_meter).toBe(false);
+    expect((await getKey("relay_meter")).v).toBe("0");
+    j = await (await onRequestPut(ctx({ relay_meter: true }))).json();
+    expect(j.relay_meter).toBe(true);
+    expect(await getKey("relay_meter")).toBeNull();
+  });
+
   it("站名截斷 60 字；一個鍵都沒帶 → 400；沒授權 → 401", async () => {
     const j = await (await onRequestPut(ctx({ brand: "x".repeat(100) }))).json();
     expect(j.brand.length).toBe(60);

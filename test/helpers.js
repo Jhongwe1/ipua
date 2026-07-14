@@ -46,7 +46,7 @@ export function envWith(extra) {
 
 /* ===== 資料佈置 ===== */
 
-// 建會員：回傳 users 整列。預設待核准、無服務。
+// 建會員：回傳 users 整列。預設待核准、無服務、無個人配額覆寫。
 export async function seedUser(over) {
   const o = Object.assign({
     google_sub: "test:" + Math.random().toString(36).slice(2),
@@ -57,14 +57,19 @@ export async function seedUser(over) {
     is_admin: 0,
     api_key_hash: "",
     api_key_hint: "",
-    vpn_token: ""
+    vpn_token: "",
+    quota_relay_day: null,
+    quota_pg_day: null,
+    rl_per_min: null
   }, over || {});
   const now = new Date().toISOString();
   const r = await testEnv.DB.prepare(
-    "INSERT INTO users (google_sub,email,name,status,services,is_admin,api_key_hash,api_key_hint,vpn_token,created_at,last_login) " +
-    "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10)"
+    "INSERT INTO users (google_sub,email,name,status,services,is_admin,api_key_hash,api_key_hint,vpn_token," +
+    "quota_relay_day,quota_pg_day,rl_per_min,created_at,last_login) " +
+    "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?13)"
   ).bind(o.google_sub, o.email, o.name, o.status, o.services, o.is_admin,
-         o.api_key_hash, o.api_key_hint, o.vpn_token, now).run();
+         o.api_key_hash, o.api_key_hint, o.vpn_token,
+         o.quota_relay_day, o.quota_pg_day, o.rl_per_min, now).run();
   return await testEnv.DB.prepare("SELECT * FROM users WHERE id=?1").bind(r.meta.last_row_id).first();
 }
 

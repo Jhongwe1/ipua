@@ -1,6 +1,8 @@
 // /api/admin/users/<編號> — 站長專用：管理單一會員。
 //   PUT    { action: "approve" | "block" | "unblock" | "make_admin" | "drop_admin" }
 //          或 { action: "set_services", services: ["relay","vpn","playground"] } — 分服務批准
+//          或 { action: "set_quota", quota_relay_day?, quota_pg_day?, rl_per_min? } — 個人配額覆寫
+//            （帶哪鍵改哪鍵；值可為 0 以上整數或 null＝清掉覆寫、回到全域預設）
 //   DELETE 刪除帳號（連同其 session）
 // approve＝快速鍵：一次批准全部服務。set_services＝精準開關單一服務；
 // 給了任何服務就算 approved、全部收回就退回 pending（封鎖中的帳號只改清單、狀態不動）。
@@ -16,6 +18,9 @@ const ACTIONS = {
   make_admin: { is_admin: 1, status: "approved" },
   drop_admin: { is_admin: 0 }
 };
+
+// set_quota 能改的欄位（與 migration 0002 的 users 新欄一一對應）
+const QUOTA_FIELDS = ["quota_relay_day", "quota_pg_day", "rl_per_min"];
 
 function idOf(params) {
   const id = parseInt(params.id, 10);
@@ -43,7 +48,23 @@ export async function onRequestPut({ request, env, params }) {
     const clean = SERVICES.filter(function (s) { return want.indexOf(s) >= 0; });
     act = { services: clean.join(",") };
   }
-  if (!act) return json({ error: "bad-action", hint: "action 要是 approve/block/unblock/make_admin/drop_admin/set_services" }, 400);
+  if (body && body.action === "set_quota") {
+    // 個人配額覆寫：帶哪鍵改哪鍵；null／空字串＝清掉覆寫（回到全域預設）
+    act = {};
+    let touched = 0;
+    for (const k of QUOTA_FIELDS) {
+      if (!(k in body)) continue;
+      const v = body[k];
+      if (v === null || v === "") { act[k] = null; touched++; continue; }
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n) || n < 0 || String(n) !== String(v).trim()) {
+        return json({ error: "bad-input", hint: k + " 要是 0 以上的整數，或 null＝回到全域預設" }, 400);
+      }
+      act[k] = n; touched++;
+    }
+    if (!touched) return json({ error: "bad-input", hint: "set_quota 至少要帶一個配額鍵（quota_relay_day / quota_pg_day / rl_per_min）" }, 400);
+  }
+  if (!act) return json({ error: "bad-action", hint: "action 要是 approve/block/unblock/make_admin/drop_admin/set_services/set_quota" }, 400);
 
   const me = await getSessionUser(request, env);   // 金鑰身分時為 null（金鑰＝超級站長，不受自我保護限制）
   const target = await env.DB.prepare("SELECT * FROM users WHERE id=?1").bind(id).first();
@@ -67,9 +88,9 @@ export async function onRequestPut({ request, env, params }) {
   }
 
   const sets = [], binds = [];
-  if (act.status !== undefined) { sets.push("status=?" + (binds.length + 1)); binds.push(act.status); }
-  if (act.is_admin !== undefined) { sets.push("is_admin=?" + (binds.length + 1)); binds.push(act.is_admin); }
-  if (act.services !== undefined) { sets.push("services=?" + (binds.length + 1)); binds.push(act.services); }
+  ["status", "is_admin", "services"].concat(QUOTA_FIELDS).forEach(function (k) {
+    if (act[k] !== undefined) { sets.push(k + "=?" + (binds.length + 1)); binds.push(act[k]); }
+  });
   binds.push(id);
   try {
     await env.DB.prepare("UPDATE users SET " + sets.join(",") + " WHERE id=?" + binds.length).bind(...binds).run();
