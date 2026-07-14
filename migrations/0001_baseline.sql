@@ -1,7 +1,10 @@
+-- Migration 0001 — baseline：2026-07-14 當下正式庫的完整 schema（原 db/schema.sql）。
+-- 全部 IF NOT EXISTS：對「已在線上跑的正式庫」執行是 no-op、不會動到既有資料；
+-- 對全新資料庫（本機、測試）則一次建齊。此後 schema 只能用新增 migration 演進，
+-- migrations/ 是唯一的 schema 來源（db/schema.sql 已退役刪除）。
+--   本機：npm run migrate:local　　正式：npm run migrate:remote
+
 -- 訪客紀錄資料表：functions/_middleware.js 每次頁面瀏覽寫入一列。
--- 套用方式（可重複執行，IF NOT EXISTS 不會蓋掉既有資料）：
---   本機測試庫：npx wrangler d1 execute ipua-logs --local  --file db/schema.sql
---   正式庫　　：npx wrangler d1 execute ipua-logs --remote --file db/schema.sql
 CREATE TABLE IF NOT EXISTS visits (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   ts      TEXT NOT NULL,   -- UTC ISO 時間（顯示時由管理頁轉成本地時間）
@@ -64,8 +67,6 @@ CREATE TABLE IF NOT EXISTS menu (
 );
 
 -- 自訂頁面（2026-07-09 上線）：站長／agent 用 API 就能開新頁面，公開網址 /p/<slug>。
--- 例：slug='about' → https://uaip.cc.cd/p/about。想放進側邊欄 → PUT /api/admin/menu 加連結。
--- 寫入走 /api/admin/pages（CRUD）；公開讀取走 /api/pages。draft（草稿）對外看不到。
 CREATE TABLE IF NOT EXISTS pages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   slug       TEXT NOT NULL UNIQUE,           -- 網址代稱：小寫英數與連字號，例 about、privacy-policy
@@ -77,18 +78,16 @@ CREATE TABLE IF NOT EXISTS pages (
   updated_at TEXT NOT NULL
 );
 
--- 網站設定（key-value）：brand（站名）、pg_open（'1'＝Playground 開放所有登入會員，2026-07-14）。
--- 表空或沒該鍵時用程式內建預設（pg_open 沒鍵＝關）。寫入走 PUT /api/admin/settings。
--- （VPN 來源 2026-07-12 起搬到 vpn_channels 表。）
+-- 網站設定（key-value）：brand（站名）、pg_open（'1'＝Playground 開放所有登入會員）。
+-- 表空或沒該鍵時用程式內建預設。寫入走 PUT /api/admin/settings。
 CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
 );
 
 -- 會員（2026-07-11 Google 登入上線）：任何人都能用 Google 登入，但要站長批准之後服務才真的能用。
--- 2026-07-13 起改「分服務批准」：services 存這個會員被批准的服務清單（逗號分隔，如 relay,vpn,playground），
+-- 2026-07-13 起改「分服務批准」：services 存這個會員被批准的服務清單（逗號分隔），
 -- status 是帳號總開關（pending/approved/blocked）；站長（is_admin）不看 services、全部服務都能用。
--- 站長信箱（lib/auth.js ADMIN_EMAILS_DEFAULT 或環境變數 ADMIN_EMAILS）第一次登入自動 approved＋is_admin=1。
 CREATE TABLE IF NOT EXISTS users (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   google_sub   TEXT NOT NULL UNIQUE,          -- Google 帳號的永久編號（本機測試登入是 dev:信箱）
@@ -120,12 +119,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions (expires_at);
 
--- VPN 訂閱的上游渠道（2026-07-12 多渠道化，取代舊 settings 的 vpn_source/vpn_nodes）：
--- 站長在 /vpn 管理，會員的 /vpn/sub/<token> 會把「所有啟用中渠道」的節點合併送出，
--- 會員看不到渠道存在與上游網址。kind='sub' 是機場訂閱網址、'nodes' 是手動貼的節點清單。
+-- VPN 訂閱的上游渠道（2026-07-12 多渠道化）：站長在 /vpn 管理，
+-- 會員的 /vpn/sub/<token> 會把「所有啟用中渠道」的節點合併送出。
 CREATE TABLE IF NOT EXISTS vpn_channels (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL,                  -- 顯示名稱（只有站長看得到，例：某機場 3 元月付）
+  name       TEXT NOT NULL,                  -- 顯示名稱（只有站長看得到）
   kind       TEXT NOT NULL DEFAULT 'sub',    -- 'sub'（上游訂閱網址）或 'nodes'（手動節點）
   url        TEXT NOT NULL DEFAULT '',       -- kind='sub' 用：上游訂閱網址（站長 API 回讀一律遮罩）
   nodes      TEXT NOT NULL DEFAULT '',       -- kind='nodes' 用：一行一條 vmess:// vless:// …
@@ -134,8 +132,7 @@ CREATE TABLE IF NOT EXISTS vpn_channels (
 );
 
 -- API 中轉站的上游管道（2026-07-11）：站長在 /relay 管理。會員打 /relay/<slug>/...，
--- 伺服器把驗證換成這裡存的上游金鑰後轉發。kind 決定上游收金鑰的方式：
--- openai/custom → Authorization: Bearer；anthropic → x-api-key；gemini → x-goog-api-key。
+-- 伺服器把驗證換成這裡存的上游金鑰後轉發。
 CREATE TABLE IF NOT EXISTS relay_channels (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   slug       TEXT NOT NULL UNIQUE,            -- 網址代稱（小寫英數與連字號），例 openai、my-ollama
@@ -143,13 +140,12 @@ CREATE TABLE IF NOT EXISTS relay_channels (
   kind       TEXT NOT NULL DEFAULT 'openai',  -- openai / anthropic / gemini / custom
   base_url   TEXT NOT NULL,                   -- 上游根網址，例 https://api.openai.com
   api_key    TEXT NOT NULL DEFAULT '',        -- 上游金鑰（只有站長 API 摸得到，回讀一律遮罩）
-  models     TEXT NOT NULL DEFAULT '',        -- 這個渠道可用的模型名稱（逗號分隔；2026-07-13 起新增渠道必填）
+  models     TEXT NOT NULL DEFAULT '',        -- 這個渠道可用的模型名稱（逗號分隔；新增渠道必填）
   enabled    INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
 
 -- LLM Playground（2026-07-13 上線）：會員在 /playground 網頁上直接試用中轉渠道裡的模型。
--- 對話與訊息存 D1（綁帳號、跨裝置同步）；可用模型清單來自 relay_channels.models。
 CREATE TABLE IF NOT EXISTS pg_conversations (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL,

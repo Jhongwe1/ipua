@@ -15,6 +15,9 @@ node_modules/
 *.log
 npm-debug.log*
 
+# 本機專用的管理筆記（LOGS_TOKEN 等秘密只放這裡，絕不進版控）
+ADMIN.local.md
+
 # 作業系統／編輯器產生的垃圾檔
 Thumbs.db
 Desktop.ini

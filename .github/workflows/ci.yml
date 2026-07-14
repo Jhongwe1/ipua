@@ -1,0 +1,26 @@
+# CI — 只跑檢查與測試（站長拍板：部署照舊在本機跑 npm run deploy，CI 不碰部署）。
+# 綠燈 ＝ typecheck 過、全部測試過、lib/apidoc.js 與 API.md 沒有漂移。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      # lib/apidoc.js 是從 API.md 產生的 — 忘了重跑 apidoc 就 commit 會在這裡被抓到
+      - name: apidoc 防漂移
+        run: |
+          npm run apidoc
+          git diff --exit-code lib/apidoc.js
