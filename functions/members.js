@@ -1,6 +1,7 @@
 // GET /members — 成員管理（站長專用頁）。
 // 非站長（未登入／一般會員）→ 顯示「僅限站長」擋板。站長 → 列出所有帳號，
 // 可核准／封鎖／解封／升降管理員／刪除。所有動作打 /api/admin/users。
+// 頁面最上方另有「Playground 開放給所有登入會員」全站開關（settings.pg_open，打 /api/admin/settings）。
 import { html, pageShell, getChrome } from "../lib/site.js";
 import { MEMBER_CSS, MEMBER_JS } from "../lib/memberui.js";
 
@@ -54,7 +55,7 @@ const MEMBERS_JS = `
 (function(){
   "use strict";
   var $=MU.$,el=MU.el,tx=MU.tx,esc=MU.esc;
-  var root=$("root"),me=null,rows=[],filter="all";
+  var root=$("root"),me=null,rows=[],filter="all",pgOpen=false;
 
   function api(path,opts){
     opts=opts||{};opts.headers=opts.headers||{};
@@ -80,15 +81,41 @@ const MEMBERS_JS = `
   MU.onLang(paint);
 
   function load(){
-    api("/api/admin/users").then(function(d){rows=d.rows||[];render();}).catch(function(e){
+    Promise.all([api("/api/admin/users"),api("/api/settings")]).then(function(rs){
+      rows=rs[0].rows||[];pgOpen=!!rs[1].pg_open;render();
+    }).catch(function(e){
       root.innerHTML='<div class="gate"><p>'+esc(e.message||e)+'</p></div>';
     });
   }
 
   function fmt(iso){if(!iso)return "—";var d=new Date(iso);return isNaN(d)?"—":d.toLocaleString();}
 
+  // 全站開關：Playground 開放給所有登入會員（settings.pg_open；只影響 playground，relay/vpn 照舊逐人批准）
+  function pgOpenCard(){
+    var card=el("div","card");card.style.padding="2px 16px";
+    var rl=el("div","rowline");
+    var g=el("div","g");
+    g.appendChild(el("div","t1",tx("Playground 開放給所有登入會員","Open playground to all signed-in members")));
+    g.appendChild(el("div","t2",tx(
+      "開啟後，任何已登入的會員不用逐一批准就能用 LLM playground（封鎖中的帳號照樣擋）；關閉＝回到下方逐人批准。",
+      "When on, any signed-in member can use the LLM playground without per-user approval (blocked accounts stay blocked). Turn off to go back to per-user grants below.")));
+    rl.appendChild(g);
+    var b=el("button","schip"+(pgOpen?" on":""),(pgOpen?"✓ ":"")+(pgOpen?tx("開放中","Open to all"):tx("未開放","Off")));
+    b.title=pgOpen?tx("點一下關閉","Click to turn off"):tx("點一下開放","Click to turn on");
+    b.addEventListener("click",function(){
+      b.disabled=true;
+      api("/api/admin/settings",{method:"PUT",json:{pg_open:!pgOpen}})
+        .then(function(d){pgOpen=!!d.pg_open;MU.flash(pgOpen?tx("已開放給所有會員","Now open to all members"):tx("已關閉，回到逐人批准","Off — back to per-user grants"));render();})
+        .catch(function(e){b.disabled=false;MU.flash(esc(e.message||e));});
+    });
+    rl.appendChild(b);
+    card.appendChild(rl);
+    return card;
+  }
+
   function render(){
     root.innerHTML="";
+    root.appendChild(pgOpenCard());
     // 篩選列
     var counts={all:rows.length,pending:0,approved:0,blocked:0};
     rows.forEach(function(r){counts[r.status]=(counts[r.status]||0)+1;});

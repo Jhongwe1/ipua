@@ -33,11 +33,11 @@ ipua/
 │     ├─ whoami.js        ← GET /api/whoami（回報訪客自己的資訊）
 │     ├─ logs.js          ← GET /api/logs（站長查紀錄，要金鑰）
 │     ├─ menu.js          ← GET /api/menu（公開：側邊欄選單；表空回預設）
-│     ├─ settings.js      ← GET /api/settings（公開：站名）
+│     ├─ settings.js      ← GET /api/settings（公開：站名＋Playground 全員開放與否）
 │     ├─ articles/        ← GET /api/articles、/api/articles/12（公開：只回已發佈）
 │     ├─ pages/           ← GET /api/pages、/api/pages/about（公開：只回已發佈）
 │     └─ admin/           ← 站長 API（都要金鑰）：articles、pages 增刪改查、media 上傳、
-│                            menu 覆蓋選單、settings 改站名、apidoc 取 API 文件
+│                            menu 覆蓋選單、settings 改站名/Playground 全員開關、apidoc 取 API 文件
 └─ public/                ← 真正上網的檔案（只有這個資料夾會部署）
    ├─ index.html          ← 主站（☰ 側邊欄；選單由 /api/menu 動態載入）
    ├─ assets/logs.js      ← /logs 的頁面行為（外殼由 functions/logs.js 輸出）

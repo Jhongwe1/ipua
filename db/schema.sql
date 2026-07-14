@@ -77,8 +77,9 @@ CREATE TABLE IF NOT EXISTS pages (
   updated_at TEXT NOT NULL
 );
 
--- 網站設定（key-value）：brand（站名）。表空或沒該鍵時用程式內建預設。
--- 寫入走 PUT /api/admin/settings（brand）。（VPN 來源 2026-07-12 起搬到 vpn_channels 表。）
+-- 網站設定（key-value）：brand（站名）、pg_open（'1'＝Playground 開放所有登入會員，2026-07-14）。
+-- 表空或沒該鍵時用程式內建預設（pg_open 沒鍵＝關）。寫入走 PUT /api/admin/settings。
+-- （VPN 來源 2026-07-12 起搬到 vpn_channels 表。）
 CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL

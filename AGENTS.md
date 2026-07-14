@@ -13,6 +13,7 @@
 | 開新頁面（新連結，例如「關於本站」） | `POST /api/admin/pages` → 上線在 `/p/{slug}` |
 | 上傳圖片 | `POST /api/admin/media` |
 | 改側邊欄選單、改站名 | `PUT /api/admin/menu`、`PUT /api/admin/settings` |
+| Playground 開放給所有登入會員 | `PUT /api/admin/settings {"pg_open":true}`（false＝關閉，回到逐人批准） |
 | 看流量 | `GET /api/logs` |
 | 批准／管理會員（可分服務） | `GET /api/admin/users`、`PUT /api/admin/users/{id} {"action":"approve"}` 或 `{"action":"set_services","services":[…]}` |
 | 加／改 API 中轉管道（含模型清單） | `POST/PUT/DELETE /api/admin/relay/channels…`（`models` 必填） |
@@ -21,7 +22,7 @@
 
 只有「改程式或版型」才需要動這個 repo 並部署（見文末）。
 
-**2026-07-11 起新增會員系統**（Google 登入）；**2026-07-13 起改分服務批准**：三個服務 `relay`（API 中轉站 /relay）、`vpn`（VPN 訂閱 /vpn）、`playground`（LLM Playground /playground）由站長分別批准（`set_services` 整包覆蓋；`approve`＝一次全給）。站長身分＝ADMIN_EMAILS 指定的信箱或 is_admin 帳號。逐端點細節見 [API.md](./API.md) 的 §5b–§5f。用管理金鑰（LOGS_TOKEN）就能操作全部站長 API，不需登入。
+**2026-07-11 起新增會員系統**（Google 登入）；**2026-07-13 起改分服務批准**：三個服務 `relay`（API 中轉站 /relay）、`vpn`（VPN 訂閱 /vpn）、`playground`（LLM Playground /playground）由站長分別批准（`set_services` 整包覆蓋；`approve`＝一次全給）。**2026-07-14 起 playground 另有全站開關 `pg_open`**（設定後所有登入會員免逐一批准；relay/vpn 不受影響），開關在 /members 頁最上方或 `PUT /api/admin/settings`。站長身分＝ADMIN_EMAILS 指定的信箱或 is_admin 帳號。逐端點細節見 [API.md](./API.md) 的 §5b–§5f。用管理金鑰（LOGS_TOKEN）就能操作全部站長 API，不需登入。
 
 ## 連線與驗證
 

@@ -53,7 +53,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `GET /api/pages` | 已發佈自訂頁面列表 |
 | `GET /api/pages/{slug}` | 單一已發佈自訂頁面 |
 | `GET /api/menu` | 側邊欄選單 |
-| `GET /api/settings` | 網站公開設定（站名） |
+| `GET /api/settings` | 網站公開設定（站名、Playground 是否全員開放） |
 | `GET /img/{id}` | 圖片（D1 讀出、邊緣快取一年） |
 | `GET /feed` | RSS 訂閱源（最新 20 篇） |
 | `GET /sitemap` | 搜尋引擎網址清單（含文章與自訂頁面） |
@@ -97,7 +97,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `DELETE /api/admin/pages/{id或slug}` | 刪除頁面（不可復原） |
 | `POST /api/admin/media` | 上傳圖片 |
 | `PUT /api/admin/menu` | 覆蓋側邊欄選單 |
-| `PUT /api/admin/settings` | 改網站設定（站名） |
+| `PUT /api/admin/settings` | 改網站設定（站名、Playground 全員開放開關） |
 | `GET /api/logs` | 訪客紀錄查詢 |
 | `GET /api/admin/apidoc` | 這份文件的 Markdown 原稿（`{ md }`） |
 | `GET /api/admin/users` | 全部會員（狀態、已批准服務、用量、最後登入） |
@@ -161,7 +161,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 
 ### GET /api/settings — 網站公開設定
 
-回 `{ brand, custom }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設。
+回 `{ brand, custom, pg_open }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。
 
 ## 5. 站長 API 詳細
 
@@ -246,14 +246,24 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
   -H "content-type: application/json; charset=utf-8" --data-binary @menu.json
 ```
 
-### 站名：PUT /api/admin/settings
+### 網站設定：PUT /api/admin/settings
 
-本體 `{ "brand": "新站名" }`（最長 60 字）。**brand 傳空字串＝還原內建預設站名**。回 `{ ok, brand, custom }`。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響）。
+**本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, pg_open }`（改完的現況）。
+
+| 鍵 | 說明 |
+|---|---|
+| `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
+| `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 LLM Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
 
 ```bat
 curl -X PUT https://uaip.cc.cd/api/admin/settings ^
   -H "Authorization: Bearer 管理金鑰" ^
   -H "content-type: application/json" --data-binary "{\"brand\":\"新站名\"}"
+
+:: Playground 開放給所有登入會員（false＝關閉）：
+curl -X PUT https://uaip.cc.cd/api/admin/settings ^
+  -H "Authorization: Bearer 管理金鑰" ^
+  -H "content-type: application/json" --data-binary "{\"pg_open\":true}"
 ```
 
 ### 訪客紀錄：GET /api/logs
@@ -277,6 +287,8 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
 ## 5c. 成員管理：/api/admin/users（分服務批准）
 
 2026-07-13 起改**分服務批准**：三個服務 `relay`（API 中轉站）、`vpn`、`playground`（LLM Playground）可以分別開關，存在 `users.services`（逗號分隔）。站長帳號不看清單、全部服務都能用。
+
+> `playground` 另有**全站開關**（`PUT /api/admin/settings` 的 `pg_open`，見 §5）：開啟時所有登入會員都能用 Playground、不看個人批准（`/api/me` 的 `services` 也會多出 playground）；關閉才回到這裡的逐人批准。relay 與 vpn 沒有全站開關。
 
 - `GET` → `{ rows }`：每筆 `id`、`email`、`name`、`picture`、`status`、`services`（逗號分隔字串）、`is_admin`、`relay_calls`、`vpn_pulls`、`last_login`、`created_at`；排序 pending 在前。
 - `PUT /api/admin/users/{id}` 本體二選一：
@@ -360,7 +372,7 @@ Authorization: Bearer uak-你的金鑰
 
 會員在網頁上直接試用中轉渠道裡的模型（2026-07-13 上線）。可選的模型＝各中轉管道的 `models` 清單；
 上游金鑰全程留在伺服器，會員只帶登入 cookie。對話存 D1、綁帳號、跨裝置同步。
-驗證：登入 cookie（要有 `playground` 服務）**或** `Authorization: Bearer <管理金鑰>`（以站長帳號的身分操作，方便 curl／agent 測試）。
+驗證：登入 cookie（要有 `playground` 服務，**或**站長開了 `pg_open` 全員開放，見 §5）**或** `Authorization: Bearer <管理金鑰>`（以站長帳號的身分操作，方便 curl／agent 測試）。
 
 - `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
 - `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。
@@ -395,6 +407,7 @@ Authorization: Bearer uak-你的金鑰
 | 加中轉管道 | POST /api/admin/relay/channels `{ name, kind, base_url, api_key, models:["gpt-4o-mini"] }`（slug 自動產生） |
 | 批准會員（全部服務） | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
 | 批准／收回單一服務 | PUT /api/admin/users/{id} `{ "action":"set_services", "services":["relay","playground"] }`（整包覆蓋） |
+| Playground 開放給所有會員 | PUT /api/admin/settings `{ "pg_open": true }`（false＝關閉，回到逐人批准） |
 | 加 VPN 渠道 | POST /api/admin/vpn/channels `{ "name":"某機場", "kind":"sub", "url":"https://…" }` |
 | 暫停某渠道 | GET /api/admin/vpn/channels 找 id → PUT `{ name, kind, enabled:false }`（會員訂閱立刻少掉那些節點） |
 
