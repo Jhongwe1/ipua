@@ -59,7 +59,7 @@ const VPN_JS = `
   function subUrl(){return origin+"/vpn/sub/"+me.vpn_token;}
 
   function paint(){
-    if(!me){MU.gateLogin(root,tx("VPN","VPN"),tx("一個訂閱網址匯入所有節點、自動更新。請先用 Google 登入。","One subscription URL for all nodes. Please sign in with Google first."));return;}
+    if(!me){MU.gateLogin(root,tx("VPN","VPN"),tx("請先用 Google 登入","Please sign in with Google first."));return;}
     // 分服務批准：要有 vpn 服務才能用這一頁
     if((me.services||[]).indexOf("vpn")<0){MU.gatePending(root,me);return;}
     render();
