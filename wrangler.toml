@@ -5,11 +5,11 @@ name = "uaip"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
 
-# 正式網域割接（uaip.cc.cd Pages → Worker）在 Cloudflare 後台做，做完再打開下面這段
-# 讓 `wrangler deploy` 維持綁定。回滾＝拿掉這段、把網域加回 Pages 專案。
-# routes = [
-#   { pattern = "uaip.cc.cd", custom_domain = true }
-# ]
+# 正式網域（2026-07-16 已從 Pages 割接到本 Worker，同 zone）。
+# 這段讓 `wrangler deploy` 維持綁定。回滾＝拿掉這段、把網域加回 Pages 專案。
+routes = [
+  { pattern = "uaip.cc.cd", custom_domain = true }
+]
 
 # 靜態資產：public/ 由邊緣供應，Worker 透過 env.ASSETS.fetch 存取。
 # not_found_handling=single-page-application → ASSETS.fetch 對找不到的路徑回 index.html
