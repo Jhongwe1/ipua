@@ -6,13 +6,15 @@
 # frame-src＝頁面上兩個 iframe 的來源：OpenStreetMap 嵌入地圖＋A-ADS 廣告（2026-07-15 補：
 # 上線後才發現漏了這行，default-src 'self' 把兩個 iframe 都擋成白框）。日後加新廣告商
 #（如 Adsterra）記得把它的 script/iframe 主機也加進對應指令，否則一樣白屏。
+# script-src/connect-src 的 cloudflareinsights＝Cloudflare Web Analytics beacon（主機自動注入，
+# 同樣是 2026-07-15 從 errlog 的 csp 違規發現被誤殺；SSR 端 lib/site.js 也同步放行了）。
 # SSR 頁面的 CSP 用 per-request nonce，在 lib/site.js html() 單一入口蓋章。
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-elDqq/z4ThEJYtjHH/hKRZptjHRFSpKEV4GZe9ZBjVE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.ipify.org https://api6.ipify.org https://httpbin.org https://ipapi.co https://ipwho.is; frame-src https://www.openstreetmap.org https://ad.a-ads.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-elDqq/z4ThEJYtjHH/hKRZptjHRFSpKEV4GZe9ZBjVE=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.ipify.org https://api6.ipify.org https://httpbin.org https://ipapi.co https://ipwho.is https://cloudflareinsights.com; frame-src https://www.openstreetmap.org https://ad.a-ads.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin
 
