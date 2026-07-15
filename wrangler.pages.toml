@@ -1,0 +1,22 @@
+# wrangler.pages.toml — v1 的 Cloudflare Pages 設定（回滾用備份，2026-07-16 Phase D 起停用）。
+# 若要把部署回滾到 Pages：把這個檔複製回 wrangler.toml，再 `npx wrangler pages deploy`。
+# 正式部署已改用 Workers（見 wrangler.toml）。
+#
+# ── 以下為原 Pages 設定 ──
+# 部署指令：npx wrangler pages deploy（不要加「.」！靜態檔在 public/）
+name = "uaip"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "public"
+
+# 站台正式網址（canonical、og、sitemap、RSS、CSRF 白名單）。
+# fork 這個專案的人改成自己的網域即可；沒設定時程式會退回用「請求本身的 origin」。
+[vars]
+SITE_ORIGIN = "https://uaip.cc.cd"
+
+# D1 資料庫綁定：functions 裡用 env.DB 存取
+# database_id 不是秘密（存取都要過 Cloudflare 帳號權限）；fork 的人要換成自己
+# `wrangler d1 create` 出來的 id，database_name 也一併改。
+[[d1_databases]]
+binding = "DB"
+database_name = "ipua-logs"
+database_id = "75e2b765-66fd-4946-99c4-4524b4149ce0"

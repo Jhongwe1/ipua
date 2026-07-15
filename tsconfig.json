@@ -11,6 +11,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["lib/**/*.js", "functions/**/*.js", "tools/**/*.mjs"],
+  "include": ["src/**/*.ts", "lib/**/*.js", "functions/**/*.js", "tools/**/*.mjs"],
   "exclude": ["lib/vendor/**", "node_modules", ".wrangler"]
 }

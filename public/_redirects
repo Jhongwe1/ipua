@@ -1,7 +1,0 @@
-# 本主機對「找不到的路徑」預設就會回傳 index.html（SPA），
-# 所以 /ip 與 /ua 交給前端 JS 依網址判斷分頁即可，這裡不要設任何改寫規則。
-#
-# 注意一：千萬不要加「/ua /index.html 200」這類規則——本主機會把 /index.html
-# 正規化成 /（308），反而導致 /ua 被轉址、路徑被清掉。
-# 注意二（2026-07-14 實測踩雷）：在這裡加「/ /playground 302」會讓 SPA fallback 整個失效
-#（/ip、/ua 變 404）。根網址跳 LLM playground 改用 functions/index.js 做，這檔維持留空。

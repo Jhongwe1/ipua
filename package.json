@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Edge-native LLM gateway + personal portal on Cloudflare Pages (zero framework, zero runtime deps, D1 only).",
   "scripts": {
-    "dev": "wrangler pages dev",
+    "dev": "wrangler dev",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "migrate:local": "wrangler d1 migrations apply ipua-logs --local",
@@ -13,7 +13,7 @@
     "seed": "node tools/seed-local.mjs",
     "apidoc": "node tools/build-apidoc.mjs",
     "checks": "npm run typecheck && npm run test",
-    "deploy": "npm run apidoc && wrangler pages deploy"
+    "deploy": "npm run apidoc && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.9.12",

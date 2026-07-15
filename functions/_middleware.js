@@ -46,7 +46,9 @@ async function logVisit(request, env, url) {
   ).run();
 }
 
-export async function onRequest(context) {
+// 記一次頁面瀏覽（背景、永不影響網站本體）。Pages 的 _middleware 與 Workers 版 router
+// 共用這一支（單一真相）：router 在分派 handler 前先呼叫它，行為與 Pages 一致。
+export function visitLog(context) {
   const { request, env } = context;
   try {
     const url = new URL(request.url);
@@ -54,5 +56,9 @@ export async function onRequest(context) {
       context.waitUntil(logVisit(request, env, url).catch(() => {}));
     }
   } catch (e) { /* 記錄永不影響網站本體 */ }
+}
+
+export async function onRequest(context) {
+  visitLog(context);
   return context.next();
 }

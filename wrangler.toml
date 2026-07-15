@@ -1,17 +1,30 @@
-# Cloudflare Pages 專案設定（uaip → https://uaip.cc.cd）
-# 有了這個檔，部署只要打：npx wrangler pages deploy
-#（不要再加「.」！靜態檔已搬進 public/，根目錄的設定檔、筆記不會被上傳）
+# Cloudflare Workers 設定（uaip → https://uaip.cc.cd）。v2.0.0 Phase D 起從 Pages 遷來。
+# 部署：npx wrangler deploy　｜　本機：npx wrangler dev
+# 回滾到 Pages：把 wrangler.pages.toml 複製回這個檔名，改用 `wrangler pages deploy`。
 name = "uaip"
+main = "src/index.ts"
 compatibility_date = "2026-07-01"
-pages_build_output_dir = "public"
+
+# 靜態資產：public/ 由邊緣供應，Worker 透過 env.ASSETS.fetch 存取。
+# not_found_handling=single-page-application → ASSETS.fetch 對找不到的路徑回 index.html
+#（前端路由 /ip /ua 靠這個）。但這個模式下「每條路徑都算命中 index.html」，所以必須
+# run_worker_first=true 讓 Worker 先接管全部路由，否則 /api/* /news 這些會被直接吐成 index.html
+#（Phase D spike 實測：run_worker_first=["/"] 時 /api/health 回的是 SPA 殼）。
+# Worker 找不到路由才 fetch ASSETS（真實靜態檔照回、其餘 SPA fallback）。_headers 仍生效
+# （wrangler dev 實測 "Parsed 2 valid header rules"）。個人站流量遠低於 10 萬 req/日免費額度。
+[assets]
+directory = "public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
 
 # 站台正式網址（canonical、og、sitemap、RSS、CSRF 白名單）。
-# fork 這個專案的人改成自己的網域即可；沒設定時程式會退回用「請求本身的 origin」。
+# fork 的人改成自己的網域即可；沒設定時程式退回用「請求本身的 origin」。
 [vars]
 SITE_ORIGIN = "https://uaip.cc.cd"
 
-# D1 資料庫綁定：functions 裡用 env.DB 存取
-# database_id 不是秘密（存取都要過 Cloudflare 帳號權限）；fork 的人要換成自己
+# D1 資料庫綁定：handler 裡用 env.DB 存取。
+# database_id 不是秘密（存取要過 Cloudflare 帳號權限）；fork 的人換成自己
 # `wrangler d1 create` 出來的 id，database_name 也一併改。
 [[d1_databases]]
 binding = "DB"
