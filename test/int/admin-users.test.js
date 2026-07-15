@@ -126,7 +126,7 @@ describe("set_quota（個人配額覆寫）", () => {
 
 describe("護欄", () => {
   it("root 站長（ADMIN_EMAILS 內建信箱）不能被封鎖／降級／刪除", async () => {
-    const root = await seedAdmin();   // zwwe1f@gmail.com＝內建站長信箱
+    const root = await seedAdmin();   // admin@example.com＝測試注入的 ADMIN_EMAILS 信箱
     for (const action of ["block", "drop_admin"]) {
       const r = await onRequestPut(putCtx(root.id, { action }));
       expect(r.status).toBe(403);

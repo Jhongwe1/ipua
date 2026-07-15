@@ -8,7 +8,7 @@ import {
 
 export async function onRequestPost({ request, env }) {
   const url = new URL(request.url);
-  if (!goodOrigin(request, url)) return json({ error: "bad-origin" }, 403);
+  if (!goodOrigin(request, url, env)) return json({ error: "bad-origin" }, 403);
   const user = await getSessionUser(request, env);
   if (!user) return json({ error: "unauthorized", hint: "請先登入" }, 401);
   if (user.status === "blocked") return json({ error: "blocked" }, 403);
@@ -28,7 +28,7 @@ export async function onRequestPost({ request, env }) {
 
 export async function onRequestDelete({ request, env }) {
   const url = new URL(request.url);
-  if (!goodOrigin(request, url)) return json({ error: "bad-origin" }, 403);
+  if (!goodOrigin(request, url, env)) return json({ error: "bad-origin" }, 403);
   const user = await getSessionUser(request, env);
   if (!user) return json({ error: "unauthorized" }, 401);
   try {

@@ -7,7 +7,7 @@ import { writeFileSync, rmSync } from "node:fs";
 const now = new Date().toISOString();
 const sql = `
 INSERT OR IGNORE INTO users (google_sub,email,name,status,services,is_admin,vpn_token,created_at,last_login)
-VALUES ('dev:zwwe1f@gmail.com','zwwe1f@gmail.com','站長（本機）','approved','',1,'uvtdevadmintoken2345','${now}','${now}');
+VALUES ('dev:admin@example.com','admin@example.com','站長（本機）','approved','',1,'uvtdevadmintoken2345','${now}','${now}');
 INSERT OR IGNORE INTO users (google_sub,email,name,status,services,is_admin,vpn_token,created_at,last_login)
 VALUES ('dev:member@example.com','member@example.com','測試會員','approved','relay,playground',0,'uvtdevmembertoken234','${now}','${now}');
 INSERT OR IGNORE INTO relay_channels (slug,name,kind,base_url,api_key,models,enabled,created_at)
@@ -23,4 +23,4 @@ try {
 } finally {
   rmSync(tmp, { force: true });
 }
-console.log("本機種子完成：站長 zwwe1f@gmail.com、會員 member@example.com、渠道 demo。");
+console.log("本機種子完成：站長 admin@example.com、會員 member@example.com、渠道 demo。");

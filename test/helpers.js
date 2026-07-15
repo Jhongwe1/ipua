@@ -73,10 +73,10 @@ export async function seedUser(over) {
   return await testEnv.DB.prepare("SELECT * FROM users WHERE id=?1").bind(r.meta.last_row_id).first();
 }
 
-// 建站長（預設用 lib/auth.js 內建站長信箱，登入即管理員）
+// 建站長（信箱對齊 vitest.config.mjs 注入的 ADMIN_EMAILS，登入即管理員）
 export function seedAdmin(over) {
   return seedUser(Object.assign({
-    email: "zwwe1f@gmail.com", name: "站長", status: "approved", is_admin: 1
+    email: "admin@example.com", name: "站長", status: "approved", is_admin: 1
   }, over || {}));
 }
 

@@ -1,9 +1,10 @@
 // GET /feed — RSS 訂閱源（新聞＋文章合流，最新 20 篇）。
 // RSS 閱讀器與部分搜尋服務會定期來抓，這是小型新聞站的標準配備。
-import { CANON, CATS, esc, getChrome } from "../lib/site.js";
+import { siteOrigin, CATS, esc, getChrome } from "../lib/site.js";
 
-export async function onRequestGet({ env }) {
-  const chrome = await getChrome(env);   // 站名（編輯模式可改，存 settings 表）
+export async function onRequestGet({ request, env }) {
+  const CANON = siteOrigin(env, request);
+  const chrome = await getChrome(env, request);   // 站名（編輯模式可改，存 settings 表）
   let rows = [];
   try {
     const res = await env.DB.prepare(

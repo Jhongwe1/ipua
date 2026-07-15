@@ -2,7 +2,7 @@
 // 只顯示已發佈（published）的頁面；草稿或不存在 → 404。
 // 外殼與文章頁同一套（pageShell）：☰ 側邊欄、日夜、EN/中、SEO 標籤都一致。
 import { marked } from "../../lib/vendor/marked.mjs";
-import { CANON, esc, html, timeAgo, pageShell, SLUG_RE } from "../../lib/site.js";
+import { siteOrigin, esc, html, timeAgo, pageShell, SLUG_RE } from "../../lib/site.js";
 import { getChromeFor } from "../../lib/chrome.js";
 
 const MD_OPTS = { gfm: true, breaks: true, async: false };
@@ -22,7 +22,7 @@ export async function onRequestGet({ request, env, params }) {
   const chrome = (await chromeP).chrome;
   if (!row) return notFound(chrome);
 
-  const canonical = CANON + "/p/" + row.slug;
+  const canonical = siteOrigin(env, request) + "/p/" + row.slug;
   // 內文圖片 lazy 載入（與文章頁同規則）
   const bodyHtml = marked.parse(row.body_md || "", MD_OPTS).replace(/<img /g, '<img loading="lazy" ');
 

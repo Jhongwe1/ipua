@@ -74,8 +74,11 @@ describe("goodOrigin（CSRF 防線）矩陣", () => {
   it("同源放行", () => {
     expect(goodOrigin(req("https://uaip.cc.cd"), url)).toBe(true);
   });
-  it("白名單域名放行", () => {
-    expect(goodOrigin(req("https://uaip.pages.dev"), url)).toBe(true);
+  it("env.SITE_ORIGIN（正式網址）跨源放行 — 例如從預覽域打正式 API", () => {
+    const u2 = new URL("https://uaip.pages.dev/api/x");
+    const r2 = new Request("https://uaip.pages.dev/api/x", { headers: { origin: "https://uaip.cc.cd" } });
+    expect(goodOrigin(r2, u2, { SITE_ORIGIN: "https://uaip.cc.cd" })).toBe(true);
+    expect(goodOrigin(r2, u2, {})).toBe(false);   // 沒設 SITE_ORIGIN 就不放行
   });
   it("localhost 開發放行", () => {
     expect(goodOrigin(req("http://localhost:8788"), url)).toBe(true);
@@ -88,7 +91,7 @@ describe("goodOrigin（CSRF 防線）矩陣", () => {
 });
 
 describe("userServices（分服務批准）矩陣", () => {
-  const env = {};
+  const env = { ADMIN_EMAILS: "admin@example.com" };
   it("null／封鎖 → 空清單", () => {
     expect(userServices(null, env)).toEqual([]);
     expect(userServices({ status: "blocked", is_admin: 1, services: "relay" }, env)).toEqual([]);
@@ -97,8 +100,8 @@ describe("userServices（分服務批准）矩陣", () => {
     expect(userServices({ status: "approved", is_admin: 1, services: "" }, env))
       .toEqual(["relay", "vpn", "playground"]);
   });
-  it("內建站長信箱（未設 is_admin）也算站長", () => {
-    expect(userServices({ status: "approved", is_admin: 0, email: "zwwe1f@gmail.com", services: "" }, env))
+  it("ADMIN_EMAILS 名單內的信箱（未設 is_admin）也算站長", () => {
+    expect(userServices({ status: "approved", is_admin: 0, email: "admin@example.com", services: "" }, env))
       .toEqual(["relay", "vpn", "playground"]);
   });
   it("pending → 空清單（就算 services 有值）", () => {

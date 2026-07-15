@@ -1,5 +1,7 @@
 // PUT /api/admin/settings — 站長專用：改網站設定。**本體帶哪個鍵就改哪個鍵**（沒帶的不動）：
-//   brand:   新站名（最長 60 字）；空字串＝刪掉自訂站名＝還原內建預設（lib/site.js 的 BRAND）。
+//   brand:   新站名（最長 60 字）；空字串＝刪掉自訂站名＝還原預設（正式網址主機名）。
+//   contact_url: 站長對外聯絡連結（http/https，最長 300 字；顯示在會員頁登入閘門的「聯絡我」鈕）。
+//            空字串或 null＝刪鍵＝不顯示聯絡鈕。
 //   pg_open: true/false — Playground 對所有登入會員開放（不必逐人批准；封鎖者照擋）。
 //            存 settings 表 pg_open='1'；false＝刪鍵＝回到逐人批准。
 //   quota_relay_day / quota_pg_day / rl_per_min（2026-07-14 配額全域預設）：
@@ -7,13 +9,13 @@
 //   relay_meter: true/false — 中轉計量 pump 的總開關（false 存 '0'＝退回純直通；true＝刪鍵＝預設開）。
 //            計量 pump 出怪問題時的免部署保險，平常不要動。
 // 回 { ok, brand, custom, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter }（改完的現況）。
-import { json, BRAND } from "../../../lib/site.js";
+import { json, siteBrand } from "../../../lib/site.js";
 import { adminOk, pgOpenAll } from "../../../lib/auth.js";
 import { QUOTA_DEFAULTS } from "../../../lib/quota.js";
 import { audit } from "../../../lib/observe.js";
 
 const QUOTA_KEYS = ["quota_relay_day", "quota_pg_day", "rl_per_min"];
-const ALL_KEYS = ["brand", "pg_open", "relay_meter"].concat(QUOTA_KEYS);
+const ALL_KEYS = ["brand", "contact_url", "pg_open", "relay_meter"].concat(QUOTA_KEYS);
 
 export async function onRequestPut(context) {
   const { request, env } = context;
@@ -41,6 +43,14 @@ export async function onRequestPut(context) {
       if (!brand) await del("brand");
       else await put("brand", brand);
     }
+    if ("contact_url" in body) {
+      const cu = String(body.contact_url == null ? "" : body.contact_url).trim().slice(0, 300);
+      if (!cu) await del("contact_url");
+      else if (!/^https?:\/\//i.test(cu)) {
+        return json({ error: "bad-input", hint: "contact_url 要是 http(s):// 開頭的網址，或空字串＝移除" }, 400);
+      }
+      else await put("contact_url", cu);
+    }
     if ("pg_open" in body) {
       if (body.pg_open) await put("pg_open", "1");
       else await del("pg_open");
@@ -67,14 +77,15 @@ export async function onRequestPut(context) {
 
     // 回傳改完的現況（settings 沒鍵時顯示內建預設）
     const res = await env.DB.prepare(
-      "SELECT k,v FROM settings WHERE k IN ('brand','quota_relay_day','quota_pg_day','rl_per_min','relay_meter')"
+      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','quota_relay_day','quota_pg_day','rl_per_min','relay_meter')"
     ).all();
     const st = {};
     (res.results || []).forEach(function (r) { st[r.k] = r.v; });
     return json({
       ok: true,
-      brand: st.brand || BRAND,
+      brand: st.brand || siteBrand(env, request),
       custom: !!st.brand,
+      contact_url: st.contact_url || "",
       pg_open: await pgOpenAll(env),
       quota_relay_day: st.quota_relay_day ? parseInt(st.quota_relay_day, 10) : QUOTA_DEFAULTS.quota_relay_day,
       quota_pg_day: st.quota_pg_day ? parseInt(st.quota_pg_day, 10) : QUOTA_DEFAULTS.quota_pg_day,

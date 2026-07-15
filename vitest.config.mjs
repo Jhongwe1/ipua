@@ -23,7 +23,12 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             compatibilityDate: "2026-07-01",
             d1Databases: ["DB"],
-            bindings: { TEST_MIGRATIONS: migrations }
+            bindings: {
+              TEST_MIGRATIONS: migrations,
+              // 正式環境由 wrangler.toml [vars]／secrets 提供；測試在這裡注入對應值
+              SITE_ORIGIN: "https://uaip.cc.cd",
+              ADMIN_EMAILS: "admin@example.com"
+            }
           }
         }
       }

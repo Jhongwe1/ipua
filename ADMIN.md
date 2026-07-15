@@ -259,8 +259,8 @@ menu 表空＝用內建預設（lib/site.js 的 DEFAULT_MENU；index.html 也留
 
 ### 要設的環境變數（secrets）
 ```
-# 1) 站長信箱（逗號分隔，可多個）。沒設就用程式內建預設 zwwe1f@gmail.com。
-printf 'zwwe1f@gmail.com' | npx wrangler pages secret put ADMIN_EMAILS --project-name uaip
+# 1) 站長信箱（逗號分隔，可多個）。沒設＝沒有信箱直升站長，只認資料庫 users.is_admin。
+printf '你的站長信箱' | npx wrangler pages secret put ADMIN_EMAILS --project-name uaip
 
 # 2) Google OAuth 憑證（申請步驟見下）：
 printf '你的CLIENT_ID' | npx wrangler pages secret put GOOGLE_CLIENT_ID --project-name uaip

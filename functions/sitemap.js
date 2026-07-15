@@ -1,8 +1,9 @@
 // GET /sitemap — 給搜尋引擎的全站網址清單（public/robots.txt 裡有指路）。
 // 固定頁面＋所有已發佈的文章＋已發佈的自訂頁面（/p/<slug>）；lastmod 用最後更新時間。
-import { CANON, CATS } from "../lib/site.js";
+import { siteOrigin, CATS } from "../lib/site.js";
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ request, env }) {
+  const CANON = siteOrigin(env, request);
   let rows = [], pageRows = [];
   try {
     const res = await env.DB.prepare(

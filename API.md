@@ -20,7 +20,7 @@
 1. **公開**：免驗證（whoami、已發佈內容、選單、站名）。
 2. **站長**：路徑含 `/admin` 的、以及 `/api/logs`。兩種通過方式（擇一）：
    - 請求標頭 `Authorization: Bearer <管理金鑰>`（curl／排程／AI agent 用）。管理金鑰＝Cloudflare Pages 環境變數 **LOGS_TOKEN**，跟 /logs、/admin 網頁登入同一把；值記在 ADMIN.md（不會上網）。
-   - 站長 Google 帳號的登入 cookie（瀏覽器用）：站長信箱登入後，管理頁與站長 API 免金鑰。站長信箱＝環境變數 **ADMIN_EMAILS**（逗號分隔，預設 `zwwe1f@gmail.com`）。
+   - 站長 Google 帳號的登入 cookie（瀏覽器用）：站長信箱登入後，管理頁與站長 API 免金鑰。站長信箱＝環境變數 **ADMIN_EMAILS**（逗號分隔，例 `admin@example.com`；沒設定＝沒有信箱直升站長，只認資料庫 users.is_admin）。
    - **本機開發（localhost）免金鑰**；正式站沒帶或帶錯一律回 401。用 cookie 身分時，跨網站送出的請求會被 Origin 檢查擋掉（防 CSRF）。
    - 換金鑰：`printf '新金鑰' | npx wrangler pages secret put LOGS_TOKEN --project-name uaip`，跑完要重新部署才生效。
 3. **會員**：任何人用 Google 登入即為會員（見 `/auth/login`）。會員功能（API 中轉、VPN 訂閱）要**站長核准**（status=approved）後才生效。
@@ -53,7 +53,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `GET /api/pages` | 已發佈自訂頁面列表 |
 | `GET /api/pages/{slug}` | 單一已發佈自訂頁面 |
 | `GET /api/menu` | 側邊欄選單 |
-| `GET /api/settings` | 網站公開設定（站名、Playground 是否全員開放） |
+| `GET /api/settings` | 網站公開設定（站名、Playground 是否全員開放、聯絡連結） |
 | `GET /api/health` | 健康檢查 `{ ok, version, db }`（部署後 smoke 測試用） |
 | `POST /api/csp-report` | CSP 違規回報收集端（瀏覽器自動送；10% 取樣進錯誤日誌；永遠 204） |
 | `GET /img/{id}` | 圖片（D1 讀出、邊緣快取一年） |
@@ -166,7 +166,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 
 ### GET /api/settings — 網站公開設定
 
-回 `{ brand, custom, pg_open }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。
+回 `{ brand, custom, pg_open, contact_url }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設（＝正式網址主機名）。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。`contact_url`＝站長聯絡連結（會員頁登入閘門的「聯絡我」鈕；空字串＝沒設定、前端不顯示該鈕）。
 
 ## 5. 站長 API 詳細
 
@@ -253,11 +253,12 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 
 ### 網站設定：PUT /api/admin/settings
 
-**本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter }`（改完的現況；配額鍵沒設過時顯示內建預設）。
+**本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, contact_url, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter }`（改完的現況；配額鍵沒設過時顯示內建預設）。
 
 | 鍵 | 說明 |
 |---|---|
-| `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
+| `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**（＝正式網址主機名）。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
+| `contact_url` | 站長對外聯絡連結（`http(s)://` 開頭，最長 300 字）；顯示在會員頁登入閘門的「聯絡我」鈕。**空字串＝移除＝不顯示聯絡鈕** |
 | `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 LLM Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
 | `quota_relay_day` | 中轉每日請求數的**全域預設**（正整數）；`null` ＝ 回到內建預設 500。個人覆寫（§5c 的 `set_quota`）優先於這個值；**站長完全不吃配額** |
 | `quota_pg_day` | Playground 每日訊息數的全域預設；`null` ＝ 內建預設 200 |

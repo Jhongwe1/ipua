@@ -68,6 +68,16 @@ describe("settings 帶哪鍵改哪鍵", () => {
     expect((await onRequestPut(ctx({ rl_per_min: "abc" }))).status).toBe(400);
   });
 
+  it("contact_url：http(s) 網址存入、空字串刪鍵、非 http(s) 400", async () => {
+    let j = await (await onRequestPut(ctx({ contact_url: "https://example.com/me" }))).json();
+    expect(j.contact_url).toBe("https://example.com/me");
+    expect((await getKey("contact_url")).v).toBe("https://example.com/me");
+    expect((await onRequestPut(ctx({ contact_url: "javascript:alert(1)" }))).status).toBe(400);
+    j = await (await onRequestPut(ctx({ contact_url: "" }))).json();
+    expect(j.contact_url).toBe("");
+    expect(await getKey("contact_url")).toBeNull();
+  });
+
   it("relay_meter：false 存 '0'（退回純直通）、true 刪鍵（預設開）", async () => {
     let j = await (await onRequestPut(ctx({ relay_meter: false }))).json();
     expect(j.relay_meter).toBe(false);

@@ -39,7 +39,7 @@ export async function onRequestGet({ request, env }) {
 export async function onRequestPost({ request, env }) {
   const url = new URL(request.url);
   if (!isLocal(url)) return miniPage("不支援", "<p>此登入方式僅供本機開發。</p>", 403);
-  if (!env.DB) return miniPage("錯誤", "<p>本機資料庫未建立 — 先跑 schema.sql。</p>", 500);
+  if (!env.DB) return miniPage("錯誤", "<p>本機資料庫未建立 — 先跑 npm run migrate:local。</p>", 500);
 
   const form = await request.formData().catch(function () { return null; });
   const email = String(form && form.get("email") || "").trim().toLowerCase();

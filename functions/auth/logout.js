@@ -4,7 +4,7 @@ import { deleteSession, clearSessionCookies, goodOrigin, json } from "../../lib/
 
 export async function onRequestPost({ request, env }) {
   const url = new URL(request.url);
-  if (!goodOrigin(request, url)) return json({ error: "bad-origin" }, 403);
+  if (!goodOrigin(request, url, env)) return json({ error: "bad-origin" }, 403);
   await deleteSession(request, env);
   const headers = new Headers({ Location: "/", "cache-control": "no-store" });
   clearSessionCookies(url).forEach(function (c) { headers.append("Set-Cookie", c); });
