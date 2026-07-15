@@ -62,8 +62,8 @@ export async function onRequestGet({ request, env }) {
     '</div>\n' +
     '<div id="docState" class="docstate">讀取中…</div>\n' +
     '<article class="art"><div id="docBody" class="prose" hidden></div></article>\n' +
-    '<script src="/assets/marked.js"><\/script>\n' +
-    '<script>' + GATE_JS + '<\/script>';
+    '<script data-nonce src="/assets/marked.js"><\/script>\n' +
+    '<script data-nonce>' + GATE_JS + '<\/script>';
 
   return html(pageShell({
     title: "API 文件",

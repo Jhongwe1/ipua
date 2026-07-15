@@ -37,8 +37,8 @@ export async function onRequestGet({ request, env }) {
   const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
   const body =
     '<div id="root"><div class="gate"><div class="spin"></div></div></div>\n' +
-    '<script>' + MEMBER_JS + '</script>\n' +
-    '<script>' + MEMBERS_JS + '</script>';
+    '<script data-nonce>' + MEMBER_JS + '</script>\n' +
+    '<script data-nonce>' + MEMBERS_JS + '</script>';
   return html(pageShell({
     title: "成員管理",
     tkey: "page.members",

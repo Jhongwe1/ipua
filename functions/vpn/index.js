@@ -45,8 +45,8 @@ export async function onRequestGet({ request, env }) {
 
   const body =
     '<div id="root"><div class="gate"><div class="spin"></div></div></div>\n' +
-    '<script>' + MEMBER_JS + '</script>\n' +
-    '<script>' + VPN_JS + '</script>';
+    '<script data-nonce>' + MEMBER_JS + '</script>\n' +
+    '<script data-nonce>' + VPN_JS + '</script>';
   return html(pageShell({
     title: "VPN",
     tkey: "page.vpn",

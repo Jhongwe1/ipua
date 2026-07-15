@@ -138,7 +138,7 @@ const BODY = `
     <p class="pagenote">數據源＝req_log（中轉與 Playground 每次請求一列；90 天自動輪替）· p50/p95 由最近 2000 筆原始值計算</p>
   </div>
 </section>
-<script src="/assets/logs.js?v=20260714"><\/script>`;
+<script data-nonce src="/assets/logs.js?v=20260714"><\/script>`;
 
 export async function onRequestGet({ request, env }) {
   const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）

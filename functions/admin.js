@@ -123,8 +123,8 @@ const BODY = `
     <button id="delBtn" class="ghost danger hidden" type="button">刪除</button>
   </div>
 </section>
-<script src="/assets/marked.js"><\/script>
-<script src="/assets/admin.js"><\/script>`;
+<script data-nonce src="/assets/marked.js"><\/script>
+<script data-nonce src="/assets/admin.js"><\/script>`;
 
 export async function onRequestGet({ request, env }) {
   const { chrome } = await getChromeFor(env, request);   // 選單依身分過濾（VPN 隱形）
