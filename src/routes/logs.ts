@@ -116,16 +116,28 @@ const BODY = `
       <div class="chip"><b id="uP50">—</b><span>耗時 p50 (ms)</span></div>
       <div class="chip"><b id="uP95">—</b><span>耗時 p95 (ms)</span></div>
       <div class="chip"><b id="uTokens">—</b><span>tokens 合計</span></div>
+      <div class="chip"><b id="uCost">—</b><span>估算成本 (USD)</span></div>
     </div>
+    <div id="unpricedNote" class="error hidden" style="margin-bottom:14px"></div>
     <div class="card tbl-card">
       <div class="card-title" style="padding:12px 14px 0">各渠道 × 模型</div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>服務</th><th>渠道</th><th>模型</th><th>請求</th><th>錯誤</th><th>平均耗時</th><th>平均首字</th><th>tokens in/out</th></tr></thead>
+          <thead><tr><th>服務</th><th>渠道</th><th>模型</th><th>請求</th><th>錯誤</th><th>平均耗時</th><th>平均首字</th><th>tokens in/out</th><th>估算成本</th></tr></thead>
           <tbody id="chBody"></tbody>
         </table>
       </div>
       <div id="chEmpty" class="tbl-empty hidden">這段期間沒有請求。</div>
+    </div>
+    <div class="card tbl-card">
+      <div class="card-title" style="padding:12px 14px 0">每人彙總</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>會員</th><th>請求</th><th>tokens in/out</th><th>估算成本</th></tr></thead>
+          <tbody id="userBody"></tbody>
+        </table>
+      </div>
+      <div id="userEmpty" class="tbl-empty hidden">這段期間沒有請求。</div>
     </div>
     <div class="card tbl-card">
       <div class="card-title" style="padding:12px 14px 0">每日</div>
@@ -136,10 +148,10 @@ const BODY = `
         </table>
       </div>
     </div>
-    <p class="pagenote">數據源＝req_log（中轉與 Playground 每次請求一列；90 天自動輪替）· p50/p95 由最近 2000 筆原始值計算</p>
+    <p class="pagenote">數據源＝req_log（中轉與 Playground 每次請求一列；90 天自動輪替）· p50/p95 由最近 2000 筆原始值計算 · 成本為<b>估算值</b>（上游回報的 token 數 × 管理員在 /api/admin/prices 維護的定價）</p>
   </div>
 </section>
-<script data-nonce src="/assets/logs.js?v=20260714"><\/script>`;
+<script data-nonce src="/assets/logs.js?v=20260717"><\/script>`;
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）

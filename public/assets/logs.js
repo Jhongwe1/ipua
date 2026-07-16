@@ -229,6 +229,8 @@
     return sorted[i];
   }
   function numFmt(n){ return (n == null) ? "—" : Number(n).toLocaleString(); }
+  /* 成本顯示（估算值）：null＝未定價「—」；有值固定 4 位小數美元 */
+  function costFmt(c){ return (c == null) ? "—" : "$" + Number(c).toFixed(4); }
 
   function loadStats(){
     adminApi("/api/admin/stats?days=" + statDays).then(function(d){
@@ -243,6 +245,14 @@
       $("uP50").textContent = numFmt(pct(durs, .5));
       $("uP95").textContent = numFmt(pct(durs, .95));
       $("uTokens").textContent = numFmt(tin) + " / " + numFmt(tout);
+      $("uCost").textContent = costFmt(d.cost_total);
+
+      /* 未定價模型提示：補進 /api/admin/prices 之後成本欄才有數字 */
+      var un = d.unpriced_models || [];
+      $("unpricedNote").textContent = un.length
+        ? "⚠ 有模型還沒定價（成本欄顯示 —）：" + un.join("、") + "。用 PUT /api/admin/prices 補上即可。"
+        : "";
+      $("unpricedNote").classList.toggle("hidden", un.length === 0);
 
       var cb = $("chBody"); cb.innerHTML = "";
       (d.by_channel || []).forEach(function(r){
@@ -255,9 +265,22 @@
         tr.appendChild(el("td", null, numFmt(r.avg_dur)));
         tr.appendChild(el("td", null, numFmt(r.avg_ttfb)));
         tr.appendChild(el("td", "mono", numFmt(r.tokens_in) + " / " + numFmt(r.tokens_out)));
+        tr.appendChild(el("td", "mono", costFmt(r.cost)));
         cb.appendChild(tr);
       });
       $("chEmpty").classList.toggle("hidden", cb.children.length > 0);
+
+      var ub = $("userBody"); ub.innerHTML = "";
+      (d.by_user || []).forEach(function(r){
+        var tr = el("tr");
+        var who = (r.name || r.email || ("#" + r.user_id)) + (r.email && r.name ? "（" + r.email + "）" : "");
+        tr.appendChild(el("td", null, who));
+        tr.appendChild(el("td", null, numFmt(r.n)));
+        tr.appendChild(el("td", "mono", numFmt(r.tokens_in) + " / " + numFmt(r.tokens_out)));
+        tr.appendChild(el("td", "mono", costFmt(r.cost) + (r.unpriced ? " ⚠" : "")));
+        ub.appendChild(tr);
+      });
+      $("userEmpty").classList.toggle("hidden", ub.children.length > 0);
 
       var db = $("dayBody"); db.innerHTML = "";
       (d.by_day || []).forEach(function(r){

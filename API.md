@@ -103,7 +103,9 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `GET /api/logs` | 訪客紀錄查詢 |
 | `GET /api/admin/errors` | 站內錯誤日誌（`?limit&offset&src`；relay/playground/OAuth/CSP 埋點） |
 | `DELETE /api/admin/errors` | 清空錯誤日誌 |
-| `GET /api/admin/stats` | 用量統計（`?days=7`；每日×服務、渠道×模型、原始耗時值供算 p95）— /logs 用量分頁的數據源 |
+| `GET /api/admin/stats` | 用量統計（`?days=7`；每日×服務、渠道×模型、每人彙總、原始耗時值供算 p95、估算成本）— /logs 用量分頁的數據源 |
+| `GET /api/admin/prices` | 模型定價表（成本記帳用） |
+| `PUT /api/admin/prices` | 覆蓋模型定價表（**整包覆蓋**；pattern 尾端 `*`＝前綴匹配） |
 | `GET /api/admin/apidoc` | 這份文件的 Markdown 原稿（`{ md }`） |
 | `GET /api/admin/users` | 全部會員（狀態、已批准服務、用量、最後登入） |
 | `PUT /api/admin/users/{id}` | 批准／封鎖／升降管理員／分服務批准（`{ action }`，見 §5c） |
@@ -275,6 +277,29 @@ curl -X PUT https://uaip.cc.cd/api/admin/settings ^
   -H "Authorization: Bearer 管理金鑰" ^
   -H "content-type: application/json" --data-binary "{\"pg_open\":true}"
 ```
+
+### 模型定價（成本記帳）：/api/admin/prices
+
+成本記帳（2026-07-17 v2.0.0）：req_log 早就記了每次請求的 token 數，這張定價表讓 stats 與 /logs 用量分頁能把 token 換算成**估算**美元成本。定價只影響報告顯示，不影響配額（配額算次數，見 §網站設定）。
+
+- `GET` → `{ items: [ { pattern, input_usd_per_m, output_usd_per_m, note, updated_at }, … ] }`
+- `PUT` 本體 `{ items: [ … ] }`，**整包覆蓋**（跟選單同款：先 GET → 改 → 整包 PUT；空陣列＝清空）。
+
+| 欄位 | 說明 |
+|---|---|
+| `pattern` | 模型名稱；尾端 `*` ＝前綴匹配（例 `gpt-4o*`）。**精確名優先於前綴、前綴取最長**（`gpt-4o-mini*` 贏過 `gpt-4o*`） |
+| `input_usd_per_m` | 每百萬 input tokens 的美元價（≥0） |
+| `output_usd_per_m` | 每百萬 output tokens 的美元價（≥0） |
+| `note` | 備註（例：官網牌價日期），最長 200 字 |
+
+```bat
+curl -X PUT https://uaip.cc.cd/api/admin/prices ^
+  -H "Authorization: Bearer 管理金鑰" ^
+  -H "content-type: application/json" ^
+  --data-binary "{\"items\":[{\"pattern\":\"gpt-4o*\",\"input_usd_per_m\":2.5,\"output_usd_per_m\":10}]}"
+```
+
+沒對上定價的模型在 stats 回應的 `unpriced_models` 陣列與 /logs 用量分頁會被點名提醒。
 
 ### 訪客紀錄：GET /api/logs
 
