@@ -1,79 +1,81 @@
-// GET /api-docs — API 文件頁（管理員專用）。
-// 跟 /logs、/admin 同一套金鑰閘門模式：頁面本身只是空殼＋金鑰輸入框，
-// 文件內容要帶金鑰打 /api/admin/apidoc 才拿得到，再由瀏覽器端 marked 渲染 —
-// 沒金鑰的人看不到文件內容。noindex、選單也只有管理員裝置才會長出入口。
-import { html, pageShell } from "../lib/site.js";
+// GET /api-docs — API 文件頁（v2.0.0 Phase L 起**公開**，noindex 保留；ADR-0010）。
+// v1 是金鑰閘門＋瀏覽器端渲染；拍板公開後改成：
+//   1) 「使用說明」＝ API.md（src/lib/apidoc.ts，唯一原稿）伺服器端 marked 渲染＋白名單消毒
+//   2) 「互動式參考」＝ vendored Scalar（public/assets/vendor/scalar.js，CSP 'self'）讀 /openapi.json
+// Scalar 3.6MB 走懶載入 — 點了分頁才插 <script>，看說明的人不用付這個流量。
+import { html, pageShell, esc } from "../lib/site.js";
 import { getChromeFor } from "../lib/chrome.js";
+import { marked } from "../lib/vendor/marked.mjs";
+import { sanitizeHtml } from "../lib/sanitize.js";
+import { APIDOC } from "../lib/apidoc.js";
 import type { RouteCtx } from "../types.js";
 
-const GATE_CSS = `
-  .gatecard{border:1px solid var(--line);border-radius:11px;padding:16px;background:var(--card);max-width:460px}
-  .gatecard p{font-size:13px;color:var(--muted);margin:0 0 12px}
-  .gatecard form{display:flex;gap:8px}
-  .gatecard input{flex:1;border:1px solid var(--line);background:var(--field);color:var(--fg);border-radius:8px;padding:11px 12px;font-size:14px;font-family:inherit;outline:none}
-  .gatecard input:focus{border-color:var(--line2)}
-  .gatecard button{border:1px solid var(--line2);background:var(--accent);color:var(--accent-fg);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
-  .gateerr{border:1px solid var(--line2);border-radius:8px;padding:10px 13px;margin-top:12px;font-size:13px}
+const DOC_CSS = `
+  .doctabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center}
+  .doctab{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:20px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:.15s}
+  .doctab:hover{border-color:var(--line2)}
+  .doctab.on{background:var(--accent);color:var(--accent-fg);border-color:var(--line2)}
+  .doctabs a{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  #scalarWrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
   .docstate{color:var(--muted);font-size:13px;padding:8px 0}
 `;
 
-const GATE_JS = `
+const DOC_JS = `
 (function(){
   "use strict";
-  var token="";
-  try{ token=localStorage.getItem("ipua-logs-token")||""; }catch(e){}
-  var gate=document.getElementById("docGate"),out=document.getElementById("docBody"),
-      err=document.getElementById("docErr"),state=document.getElementById("docState");
-  function load(){
-    state.hidden=false; gate.hidden=true; err.hidden=true;
-    var headers={};
-    if(token)headers["Authorization"]="Bearer "+token;
-    fetch("/api/admin/apidoc",{headers:headers,cache:"no-store"}).then(function(r){
-      if(r.status===401)throw{auth:true};
-      if(!r.ok)throw new Error("HTTP "+r.status);
-      return r.json();
-    }).then(function(d){
-      try{ if(token)localStorage.setItem("ipua-logs-token",token); }catch(e){}
-      state.hidden=true;
-      out.innerHTML=window.marked?marked.parse(d.md||"",{gfm:true,breaks:false,async:false}):"";
-      out.hidden=false;
-    }).catch(function(e){
-      state.hidden=true; out.hidden=true; gate.hidden=false;
-      err.hidden=!(e&&e.auth&&token);
-      var inp=document.getElementById("docToken"); if(inp)inp.focus();
-    });
+  var prose=document.getElementById("docProse"),wrap=document.getElementById("scalarWrap"),
+      state=document.getElementById("refState"),loaded=false;
+  function show(ref){
+    document.getElementById("tabDoc").classList.toggle("on",!ref);
+    document.getElementById("tabRef").classList.toggle("on",ref);
+    prose.hidden=ref; wrap.hidden=!ref;
+    if(ref&&!loaded){
+      loaded=true;
+      state.hidden=false;
+      var s=document.createElement("script");
+      s.src="/assets/vendor/scalar.js";           /* CSP script-src 'self' 放行同源檔案 */
+      s.onload=function(){ state.hidden=true; };
+      s.onerror=function(){ state.textContent="互動式參考載入失敗 — 規格本體在 /openapi.json"; };
+      document.body.appendChild(s);
+    }
   }
-  document.getElementById("docForm").addEventListener("submit",function(e){
-    e.preventDefault();
-    token=document.getElementById("docToken").value.trim();
-    if(token)load();
-  });
-  load();
+  document.getElementById("tabDoc").addEventListener("click",function(){show(false);});
+  document.getElementById("tabRef").addEventListener("click",function(){show(true);});
 })();
 `;
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）
+  // API.md → HTML：跟文章／自訂頁同一條消毒管線（marked 放行原始 HTML，一律過白名單）
+  const docHtml = sanitizeHtml(marked.parse(APIDOC, { gfm: true, breaks: false, async: false }) as string);
   const body =
     "<style>" +
-    GATE_CSS +
+    DOC_CSS +
     "</style>\n" +
-    '<div id="docGate" class="gatecard" hidden>\n' +
-    '  <p>API 文件只開放管理員閱讀。用管理員 Google 帳號 <a href="/auth/login?next=/api-docs">登入</a>，或輸入管理金鑰（與 /logs、/admin 同一把）；金鑰只存在這台裝置的瀏覽器裡。</p>\n' +
-    '  <form id="docForm"><input id="docToken" type="password" autocomplete="off" placeholder="管理金鑰"><button type="submit">進入</button></form>\n' +
-    '  <div id="docErr" class="gateerr" hidden>⚠ 金鑰不正確，請再試一次。</div>\n' +
+    '<div class="doctabs">\n' +
+    '  <button id="tabDoc" class="doctab on" type="button">使用說明</button>\n' +
+    '  <button id="tabRef" class="doctab" type="button">互動式參考（OpenAPI）</button>\n' +
+    '  <a href="/openapi.json">openapi.json ↗</a>\n' +
     "</div>\n" +
-    '<div id="docState" class="docstate">讀取中…</div>\n' +
-    '<article class="art"><div id="docBody" class="prose" hidden></div></article>\n' +
-    '<script data-nonce src="/assets/marked.js"><\/script>\n' +
+    '<article class="art"><div id="docProse" class="prose">' +
+    docHtml +
+    "</div></article>\n" +
+    '<div id="refState" class="docstate" hidden>互動式參考載入中…（約 1MB，只載一次）</div>\n' +
+    '<div id="scalarWrap" hidden>\n' +
+    // Scalar standalone 的掛載點：讀 data-url 指到的規格（同源，CSP connect-src 'self' 放行）。
+    // 這顆 <script> 沒有 nonce、不會執行 — Scalar 只是用它當 DOM 錨點與設定載體。
+    '  <script id="api-reference" data-url="' +
+    esc("/openapi.json") +
+    '"></script>\n' +
+    "</div>\n" +
     "<script data-nonce>" +
-    GATE_JS +
-    "<\/script>";
+    DOC_JS +
+    "</script>";
 
   return html(
     pageShell({
       title: "API 文件",
-      desc: "管理員專用的 API 使用說明。",
+      desc: "uaip.cc.cd 的 API 使用說明與 OpenAPI 互動式參考。",
       noindex: true,
       chrome: chrome,
       activePath: "/api-docs",

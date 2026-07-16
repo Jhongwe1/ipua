@@ -1,7 +1,9 @@
 # uaip.cc.cd API 文件
 
-> **這份檔案是 API 文件的唯一原稿。** 線上版 <https://uaip.cc.cd/api-docs>（要管理金鑰）顯示的內容
-> 就是本檔 — 改完本檔要執行 `node tools/build-apidoc.mjs` 重新產生 `src/lib/apidoc.ts`，再部署。
+> **這份檔案是 API 文件的敘事原稿。** 線上版 <https://uaip.cc.cd/api-docs>（公開）顯示的內容
+> 就是本檔 — 改完本檔要執行 `npm run apidoc` 重新產生 `src/lib/apidoc.ts`，再部署。
+> 機器可讀的 OpenAPI 3.1 規格在 [docs/openapi.yaml](./docs/openapi.yaml)（線上 `/openapi.json`、
+> /api-docs 有互動式參考）— **改 API 要三件套同步**（本檔＋openapi.yaml＋重產），CI 會核對。
 > 給 AI agent 的操作指南（含常用流程與眉角）見 [AGENTS.md](./AGENTS.md)。
 
 網頁後台能做的每一件事，這裡都有對應的 HTTP API — 用 curl、排程或 AI agent 都能操作整個網站。

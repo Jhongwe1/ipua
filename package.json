@@ -12,11 +12,12 @@
     "migrate:remote": "wrangler d1 migrations apply ipua-logs --remote",
     "seed": "node tools/seed-local.mjs",
     "apidoc": "node tools/build-apidoc.mjs",
+    "openapi": "node tools/build-openapi.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "checks": "npm run lint && npm run typecheck && npm run test",
-    "deploy": "npm run apidoc && wrangler deploy"
+    "deploy": "npm run apidoc && npm run openapi && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.9.12",
@@ -29,6 +30,7 @@
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.64.0",
     "vitest": "~3.2.0",
-    "wrangler": "~4.44.0"
+    "wrangler": "~4.44.0",
+    "yaml": "^2.9.0"
   }
 }

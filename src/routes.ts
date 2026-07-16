@@ -38,6 +38,7 @@ import { onRequestGet as vpnSub } from "./routes/vpn/sub/[token].js";
 import { onRequest as relayAll } from "./routes/relay/[[path]].js";
 
 // —— 公開 API ——
+import { onRequestGet as openapiJson } from "./routes/openapi.js";
 import { onRequestGet as apiHealth } from "./routes/api/health.js";
 import { onRequestGet as apiWhoami } from "./routes/api/whoami.js";
 import { onRequestGet as apiMe } from "./routes/api/me.js";
@@ -141,6 +142,7 @@ export const ROUTES: Array<[string, MethodMap]> = [
   ["/api/account/logout-all", { POST: acctLogoutAll }],
 
   // 公開 API
+  ["/openapi.json", { GET: openapiJson }],
   ["/api/health", { GET: apiHealth }],
   ["/api/whoami", { GET: apiWhoami }],
   ["/api/me", { GET: apiMe }],
