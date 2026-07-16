@@ -26,6 +26,8 @@ const lastLog = () => env.DB.prepare("SELECT * FROM req_log ORDER BY id DESC LIM
 
 describe("relay 配額", () => {
   it("超過個人日配額 → 429 quota-exceeded＋Retry-After；上游一次都不會被打", async () => {
+    // 用 req_log 餵量＝D1 語意，釘在 D1 降級路徑（DO 路徑的擋人測試在 unit/rate-limiter.test.ts）
+    await env.DB.prepare("INSERT INTO settings (k,v) VALUES ('quota_do','0')").run();
     const u = await seedUser({ status: "approved", services: "relay", quota_relay_day: 1, rl_per_min: 99 });
     const key = await giveKey(u);
     await seedChannel({ slug: "m1" });

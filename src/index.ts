@@ -5,6 +5,9 @@
 import { handle } from "./router.js";
 import type { Env } from "./types.js";
 
+// Durable Object 類別必須從進入點匯出，wrangler 的 DO binding 才找得到（Phase H 限流器）
+export { RateLimiter } from "./do/rate-limiter.js";
+
 export default {
   fetch(request: Request, env: Env, exec: ExecutionContext): Promise<Response> {
     return handle(request, env, exec);

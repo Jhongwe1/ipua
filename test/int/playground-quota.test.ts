@@ -32,6 +32,8 @@ const lastLog = () =>
 
 describe("playground 配額", () => {
   it("日配額用完 → 429，且【不建對話、不存訊息】（檢查在任何寫入之前）", async () => {
+    // 用 req_log 餵量＝D1 語意，釘在 D1 降級路徑（DO 路徑的擋人測試在 unit/rate-limiter.test.ts）
+    await env.DB.prepare("INSERT INTO settings (k,v) VALUES ('quota_do','0')").run();
     const u = await seedUser({ status: "approved", services: "playground", quota_pg_day: 1, rl_per_min: 99 });
     await logReq(env, { user_id: u.id, svc: "pg", status: 200 });
     const ctx = await chatCtx(u, { channel: "any", model: "m", messages: [{ role: "user", content: "hi" }] });

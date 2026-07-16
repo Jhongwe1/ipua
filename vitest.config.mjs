@@ -20,9 +20,14 @@ export default defineWorkersConfig(async () => {
           // 測試共用一個 worker（D1 也是同一顆），isolatedStorage 讓每個測試自動回滾
           singleWorker: true,
           isolatedStorage: true,
+          // DO 測試需要 main：RATE_LIMITER 綁定的類別從這個進入點的匯出找（Phase H）
+          main: "./src/index.ts",
           miniflare: {
             compatibilityDate: "2026-07-01",
             d1Databases: ["DB"],
+            durableObjects: {
+              RATE_LIMITER: { className: "RateLimiter", useSQLite: true }
+            },
             bindings: {
               TEST_MIGRATIONS: migrations,
               // 正式環境由 wrangler.toml [vars]／secrets 提供；測試在這裡注入對應值

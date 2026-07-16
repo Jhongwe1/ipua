@@ -3,10 +3,13 @@
 // 過渡期哲學：handler 由 .js 轉來、邏輯不動，型別以「夠用、不擋路」為準 —— 資料列多半
 // 直接取自 D1（欄位型別鬆），所以 Row 型別是描述性的、允許 index 存取。
 
+import type { RateLimiter } from "./do/rate-limiter.js";
+
 // wrangler.toml 綁定 + secrets。functions/handler 只碰得到這些。
 export interface Env {
   DB: D1Database;
   ASSETS: { fetch: (req: Request) => Promise<Response> };
+  RATE_LIMITER?: DurableObjectNamespace<RateLimiter>; // Phase H 限流器 DO（可選：沒綁定就走 D1 降級路徑）
   SITE_ORIGIN?: string;
   ADMIN_EMAILS?: string;
   LOGS_TOKEN?: string;

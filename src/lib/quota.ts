@@ -8,6 +8,7 @@
 //   * 計量／配額任何一步壞掉都「放行」— 觀測功能絕不弄掛正職服務。
 import { json } from "./site.js";
 import { isAdminUser } from "./auth.js";
+import { reportErrorNow } from "./observe.js";
 import type { Env, UserRow } from "../types.js";
 
 export const QUOTA_DEFAULTS = { quota_relay_day: 500, quota_pg_day: 200, rl_per_min: 30 };
@@ -24,9 +25,51 @@ export function utcDayStart(): string {
 
 export type QuotaResult = { ok: true; resp?: undefined } | { ok: false; resp: Response };
 
+// 429 組裝（DO 路徑與 D1 降級路徑共用同一套文案／形狀 — 對外契約不因 Phase H 改變）
+function dayDenied(used: number, limit: number, now: number, dayStart: string): QuotaResult {
+  const reset = new Date(dayStart);
+  reset.setUTCDate(reset.getUTCDate() + 1);
+  const secs = Math.max(1, Math.ceil((reset.getTime() - now) / 1000));
+  return {
+    ok: false,
+    resp: json(
+      {
+        error: "quota-exceeded",
+        hint: "今日額度用完了（" + used + "/" + limit + "），UTC 午夜重置；需要更多請聯絡管理員",
+        used: used,
+        limit: limit,
+        reset: reset.toISOString()
+      },
+      429,
+      { "retry-after": String(secs) }
+    )
+  };
+}
+function minDenied(used: number, limit: number, now: number): QuotaResult {
+  return {
+    ok: false,
+    resp: json(
+      {
+        error: "rate-limited",
+        hint: "請求太快了（每分鐘上限 " + limit + "），請稍等再試",
+        used: used,
+        limit: limit,
+        reset: new Date(now + 60e3).toISOString()
+      },
+      429,
+      { "retry-after": "60" }
+    )
+  };
+}
+
 /**
- * 配額檢查。管理員直接放行；一個 D1 batch 讀全域設定＋兩個 COUNT（UTC 日窗＋滾動 60 秒）。
- * 個人覆寫欄位（users.quota_*／rl_per_min，NULL＝沒設）優先於全域 settings，再退程式預設。
+ * 配額檢查。管理員直接放行；limit 三層優先序＝個人覆寫欄位（users.quota_*／rl_per_min，
+ * NULL＝沒設）＞ 全域 settings ＞ 程式預設 — 算好才交給計數層。
+ *
+ * 計數層三層降級（Phase H，ADR-0007）：
+ *   1) Durable Object 原子計數（settings quota_do='0' 可一鍵停用）— 修掉 COUNT-then-insert 競態
+ *   2) DO 壞掉／沒綁定 → 退回 v1 的 D1 COUNT 路徑（近似值，堪用）
+ *   3) 連 D1 都壞 → 放行 — 配額永遠不弄掛正職服務（demo 模式相反，fail-closed，見 Phase K）
  */
 export async function checkQuota(env: Env, user: UserRow, svc: "relay" | "pg"): Promise<QuotaResult> {
   try {
@@ -34,18 +77,11 @@ export async function checkQuota(env: Env, user: UserRow, svc: "relay" | "pg"): 
     if (isAdminUser(user, env)) return { ok: true }; // 管理員全豁免
     const now = Date.now();
     const dayStart = utcDayStart();
-    const minAgo = new Date(now - 60e3).toISOString();
-    const res = await env.DB.batch([
-      env.DB.prepare("SELECT k,v FROM settings WHERE k IN ('quota_relay_day','quota_pg_day','rl_per_min')"),
-      env.DB.prepare("SELECT COUNT(*) AS c FROM req_log WHERE user_id=?1 AND svc=?2 AND ts>=?3").bind(
-        user.id,
-        svc,
-        dayStart
-      ),
-      env.DB.prepare("SELECT COUNT(*) AS c FROM req_log WHERE user_id=?1 AND ts>=?2").bind(user.id, minAgo)
-    ]);
+    const rs = await env.DB.prepare(
+      "SELECT k,v FROM settings WHERE k IN ('quota_relay_day','quota_pg_day','rl_per_min','quota_do')"
+    ).all();
     const st: Record<string, string> = {};
-    for (const r of (res[0].results || []) as { k: string; v: string }[]) st[r.k] = r.v;
+    for (const r of (rs.results || []) as { k: string; v: string }[]) st[r.k] = r.v;
     const dayKey = svc === "relay" ? "quota_relay_day" : "quota_pg_day";
     const dayDefault = intOr(
       st[dayKey],
@@ -54,47 +90,38 @@ export async function checkQuota(env: Env, user: UserRow, svc: "relay" | "pg"): 
     const dayLimit = user[dayKey] == null ? dayDefault : intOr(user[dayKey], dayDefault);
     const rlDefault = intOr(st.rl_per_min, QUOTA_DEFAULTS.rl_per_min);
     const rlLimit = user.rl_per_min == null ? rlDefault : intOr(user.rl_per_min, rlDefault);
-    const usedDay = Number(((res[1].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
-    const usedMin = Number(((res[2].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
 
-    if (usedDay >= dayLimit) {
-      const reset = new Date(dayStart);
-      reset.setUTCDate(reset.getUTCDate() + 1);
-      const secs = Math.max(1, Math.ceil((reset.getTime() - now) / 1000));
-      return {
-        ok: false,
-        resp: json(
-          {
-            error: "quota-exceeded",
-            hint: "今日額度用完了（" + usedDay + "/" + dayLimit + "），UTC 午夜重置；需要更多請聯絡管理員",
-            used: usedDay,
-            limit: dayLimit,
-            reset: reset.toISOString()
-          },
-          429,
-          { "retry-after": String(secs) }
-        )
-      };
+    // 第一層：DO 原子計數（每會員一顆實例；被擋的請求不吃額度）
+    if (st.quota_do !== "0" && env.RATE_LIMITER) {
+      try {
+        const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName("u:" + user.id));
+        const r = await stub.check({ svc: svc, perMin: rlLimit, perDay: dayLimit });
+        if (r.ok) return { ok: true };
+        return r.kind === "day" ? dayDenied(r.used, r.limit, now, dayStart) : minDenied(r.used, r.limit, now);
+      } catch (e) {
+        await reportErrorNow(env, "quota.do", e, { user_id: user.id }); // 降級要留痕（告警掃 errlog）
+      }
     }
-    if (usedMin >= rlLimit) {
-      return {
-        ok: false,
-        resp: json(
-          {
-            error: "rate-limited",
-            hint: "請求太快了（每分鐘上限 " + rlLimit + "），請稍等再試",
-            used: usedMin,
-            limit: rlLimit,
-            reset: new Date(now + 60e3).toISOString()
-          },
-          429,
-          { "retry-after": "60" }
-        )
-      };
-    }
+
+    // 第二層：v1 的 D1 COUNT 路徑（併發下是近似值 — 當降級堪用，ADR-0002/0007）
+    const res = await env.DB.batch([
+      env.DB.prepare("SELECT COUNT(*) AS c FROM req_log WHERE user_id=?1 AND svc=?2 AND ts>=?3").bind(
+        user.id,
+        svc,
+        dayStart
+      ),
+      env.DB.prepare("SELECT COUNT(*) AS c FROM req_log WHERE user_id=?1 AND ts>=?2").bind(
+        user.id,
+        new Date(now - 60e3).toISOString()
+      )
+    ]);
+    const usedDay = Number(((res[0].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
+    const usedMin = Number(((res[1].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
+    if (usedDay >= dayLimit) return dayDenied(usedDay, dayLimit, now, dayStart);
+    if (usedMin >= rlLimit) return minDenied(usedMin, rlLimit, now);
     return { ok: true };
   } catch (e) {
-    return { ok: true }; // 配額系統故障 → 放行，服務照跑
+    return { ok: true }; // 第三層：配額系統整組故障 → 放行，服務照跑
   }
 }
 
@@ -152,7 +179,11 @@ export async function logReq(env: Env, rec: ReqLogRec): Promise<void> {
  * 也絕不需要緩衝／解析會員的請求本體。取「最後一個」是因為 usage 都在串流尾端才完整
  * （anthropic 的 message_start 只有 input，message_delta 最後補 output — 各取各的最後值）。
  */
-export function scanUsage(text: string): { model: string; tokens_in: number | null; tokens_out: number | null } {
+export function scanUsage(text: string): {
+  model: string;
+  tokens_in: number | null;
+  tokens_out: number | null;
+} {
   const last = (re: RegExp): string | null => {
     let m,
       out = null;

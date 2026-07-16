@@ -29,6 +29,7 @@
 - [ADR-0004 CSP：SSR 用 per-request nonce＋靜態用 sha256](./docs/adr/0004-csp-nonce-plus-hash.md)
 - [ADR-0005 中轉計量用 pump 而非 tee()](./docs/adr/0005-relay-pump-metering-not-tee.md)
 - [ADR-0006 Pages → Workers 遷移](./docs/adr/0006-pages-to-workers.md)
+- [ADR-0007 DO 限流器](./docs/adr/0007-durable-object-rate-limiter.md)
 - [ADR-0008 全面 TypeScript（strict）](./docs/adr/0008-typescript-strict.md)
 
 另見：[威脅模型（STRIDE）](./docs/THREAT-MODEL.md) ·

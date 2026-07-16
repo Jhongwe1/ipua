@@ -63,12 +63,17 @@ describe("extractUsage（playground 逐筆累積）", () => {
 });
 
 describe("checkQuota 三層優先序＋豁免", () => {
+  // 這組測的是「limit 怎麼算」與 v1 的 D1 COUNT 語意（req_log 餵量）。Phase H 之後預設走
+  // DO 原子計數（不看 req_log），所以吃 req_log 的測試先設 quota_do='0' 釘在 D1 降級路徑 —
+  // 它們同時就是第二層降級的迴歸測試。DO 路徑本身的測試在 rate-limiter.test.ts。
   it("管理員永遠放行（就算個人配額是 0）", async () => {
     const adm = await seedAdmin({ quota_relay_day: 0, rl_per_min: 0 });
     expect((await checkQuota(env, adm, "relay")).ok).toBe(true);
   });
   it("個人覆寫優先於全域設定：個人 1、用掉 1 → 429 quota-exceeded＋Retry-After", async () => {
-    await env.DB.prepare("INSERT INTO settings (k,v) VALUES ('quota_relay_day','999')").run();
+    await env.DB.prepare(
+      "INSERT INTO settings (k,v) VALUES ('quota_do','0'),('quota_relay_day','999')"
+    ).run();
     const u = await seedUser({ status: "approved", services: "relay", quota_relay_day: 1 });
     await logReq(env, { user_id: u.id, svc: "relay", status: 200 });
     // 滾動 60 秒的 rate limit 會先擋 — 拉高個人 rl 讓日配額先觸發
@@ -85,6 +90,7 @@ describe("checkQuota 三層優先序＋豁免", () => {
     expect(j.reset).toContain("T00:00:00");
   });
   it("滾動 60 秒 rate limit：個人 rl_per_min=1、剛用 1 次 → 429 rate-limited", async () => {
+    await env.DB.prepare("INSERT INTO settings (k,v) VALUES ('quota_do','0')").run();
     const u = await seedUser({ status: "approved", services: "relay", rl_per_min: 1 });
     await logReq(env, { user_id: u.id, svc: "relay", status: 200 });
     const fresh = await env.DB.prepare("SELECT * FROM users WHERE id=?1").bind(u.id).first<any>();

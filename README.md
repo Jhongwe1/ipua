@@ -50,6 +50,7 @@ Design decisions are recorded as ADRs — the honest trade-offs, not just the wi
 - [ADR-0004 CSP: per-request nonce (SSR) + sha256 (static)](./docs/adr/0004-csp-nonce-plus-hash.md)
 - [ADR-0005 Relay metering via pump, not tee()](./docs/adr/0005-relay-pump-metering-not-tee.md)
 - [ADR-0006 Pages → Workers migration](./docs/adr/0006-pages-to-workers.md)
+- [ADR-0007 Durable Object rate limiter](./docs/adr/0007-durable-object-rate-limiter.md)
 - [ADR-0008 Full TypeScript (strict)](./docs/adr/0008-typescript-strict.md)
 
 Also: [Threat model (STRIDE)](./docs/THREAT-MODEL.md) · [Honest comparison vs one-api / LiteLLM / OpenRouter / AI Gateway](./docs/COMPARISON.md) · [Known debt](./DEBT.md) · [Latency/cost report skeleton](./docs/REPORT-SKELETON.md) · [Security policy](./SECURITY.md)

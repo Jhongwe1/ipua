@@ -37,6 +37,16 @@ binding = "DB"
 database_name = "ipua-logs"
 database_id = "75e2b765-66fd-4946-99c4-4524b4149ce0"
 
+# 限流器 Durable Object（v2.0.0 Phase H，ADR-0007）：每個會員一顆實例（idFromName "u:<id>"），
+# SQLite-backed 原子計數，修掉 D1 COUNT 的並發競態。settings 設 quota_do='0' 可免部署退回 D1 路徑。
+[durable_objects]
+bindings = [{ name = "RATE_LIMITER", class_name = "RateLimiter" }]
+
+# DO 類別首次上線要宣告成 SQLite-backed（免費層也只支援這種）；migrations tag 一經部署不可改
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
+
 # 本機 wrangler dev 用 localhost 當 request.url 的 host（不設的話會拿 routes 的正式網域，
 # localhost 免金鑰／dev 登入表單全會失效）。只影響本機，不影響部署。
 [dev]
