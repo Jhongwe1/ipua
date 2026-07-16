@@ -139,15 +139,15 @@ export interface ReqLogRec {
 
 /**
  * 寫一列 req_log。永不 throw、回傳的 Promise 永不 reject（呼叫端可安心丟給 waitUntil）。
- * 1% 機率順手清 90 天前的舊列（免 cron 的簡易保養）。
+ * 90 天輪替由每日 cron 的 purgeOld 負責（Phase I；v1 的 1% 隨機順手清已退役）。
  */
 export async function logReq(env: Env, rec: ReqLogRec): Promise<void> {
   try {
-    const stmts = [
-      env.DB.prepare(
-        "INSERT INTO req_log (ts,user_id,svc,channel,model,status,dur_ms,ttfb_ms,tokens_in,tokens_out) " +
-          "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
-      ).bind(
+    await env.DB.prepare(
+      "INSERT INTO req_log (ts,user_id,svc,channel,model,status,dur_ms,ttfb_ms,tokens_in,tokens_out) " +
+        "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
+    )
+      .bind(
         new Date().toISOString(),
         rec.user_id,
         rec.svc,
@@ -159,15 +159,7 @@ export async function logReq(env: Env, rec: ReqLogRec): Promise<void> {
         rec.tokens_in == null ? null : rec.tokens_in,
         rec.tokens_out == null ? null : rec.tokens_out
       )
-    ];
-    if (Math.random() < 0.01) {
-      stmts.push(
-        env.DB.prepare("DELETE FROM req_log WHERE ts < ?1").bind(
-          new Date(Date.now() - 90 * 86400e3).toISOString()
-        )
-      );
-    }
-    await env.DB.batch(stmts);
+      .run();
   } catch (e) {
     /* 計量失敗絕不影響服務 */
   }

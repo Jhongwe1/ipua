@@ -211,6 +211,21 @@ WHERE NOT EXISTS (SELECT 1 FROM articles a
 npx wrangler d1 export ipua-logs --remote --output backup.sql
 ```
 
+### 自動備份與告警（v2.0.0 Phase I）
+
+- **自動備份**：每日 UTC 19:17（台北 03:17）cron 把全部資料表匯成 JSONL 存進 R2 桶
+  `uaip-backups`（物件 `backup/<UTC日>.jsonl`，圖片 BLOB 排除、保留最近 14 份）。
+  上面的手動 `d1 export` 仍然可用，當第二保險。
+- **Telegram 告警**：每 5 分鐘掃 errlog 增量推 Telegram。要啟用先跟 @BotFather 建 bot、
+  拿 chat id，再設兩把 secret（沒設＝告警自動停用，其他 cron 照跑）：
+  ```
+  printf '%s' '<bot token>' | npx wrangler secret put TG_BOT_TOKEN
+  printf '%s' '<chat id>'   | npx wrangler secret put TG_CHAT_ID
+  ```
+- **健康紀錄**：每個 cron job 的最近一次結果寫在 settings 表 `cron_last_rollup` /
+  `cron_last_backup` / `cron_last_purge` / `cron_last_alerts`（JSON：ts、ok、note/err）；
+  job 失敗也會寫一列 errlog（src=`cron.<job>`），告警自然涵蓋 cron 自身故障。
+
 ## 本機測試
 
 ```

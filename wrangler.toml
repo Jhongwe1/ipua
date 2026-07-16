@@ -47,6 +47,19 @@ bindings = [{ name = "RATE_LIMITER", class_name = "RateLimiter" }]
 tag = "v1"
 new_sqlite_classes = ["RateLimiter"]
 
+# cron 排程（v2.0.0 Phase I，src/cron.ts）：每 5 分鐘掃 errlog 推 Telegram 告警（secrets
+# TG_BOT_TOKEN／TG_CHAT_ID 未設＝跳過）；每日 UTC 19:17（台北 03:17 低峰）聚合＋備份＋清理。
+[triggers]
+crons = ["*/5 * * * *", "17 19 * * *"]
+
+# R2 備份桶（Phase I）：每日全庫 JSONL（media 的 BLOB 排除）、保留 14 份。
+# ⚠ 帳號尚未開通 R2（2026-07-17 建桶回 code 10042）——到 Dashboard 開通 R2、
+# `npx wrangler r2 bucket create uaip-backups` 成功後，取消下面三行註解再部署。
+# 沒綁定期間備份 job 會跳過（cron_last_backup 記 skip），其他 cron 照跑。
+#[[r2_buckets]]
+#binding = "BACKUPS"
+#bucket_name = "uaip-backups"
+
 # 本機 wrangler dev 用 localhost 當 request.url 的 host（不設的話會拿 routes 的正式網域，
 # localhost 免金鑰／dev 登入表單全會失效）。只影響本機，不影響部署。
 [dev]

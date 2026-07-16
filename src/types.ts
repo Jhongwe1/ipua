@@ -10,11 +10,14 @@ export interface Env {
   DB: D1Database;
   ASSETS: { fetch: (req: Request) => Promise<Response> };
   RATE_LIMITER?: DurableObjectNamespace<RateLimiter>; // Phase H 限流器 DO（可選：沒綁定就走 D1 降級路徑）
+  BACKUPS?: R2Bucket; // Phase I 備份桶（可選：沒綁定＝備份 job 跳過）
   SITE_ORIGIN?: string;
   ADMIN_EMAILS?: string;
   LOGS_TOKEN?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  TG_BOT_TOKEN?: string; // Phase I Telegram 告警（未設＝告警 no-op）
+  TG_CHAT_ID?: string;
   [key: string]: unknown;
 }
 

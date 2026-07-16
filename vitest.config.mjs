@@ -25,6 +25,7 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             compatibilityDate: "2026-07-01",
             d1Databases: ["DB"],
+            r2Buckets: ["BACKUPS"], // Phase I 備份測試用（記憶體模擬）
             durableObjects: {
               RATE_LIMITER: { className: "RateLimiter", useSQLite: true }
             },
