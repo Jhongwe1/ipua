@@ -1,6 +1,6 @@
 {
   "name": "uaip",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Edge-native LLM gateway + personal portal on Cloudflare Workers (zero framework, zero runtime deps, D1 only).",

@@ -6,7 +6,7 @@
 
 import type { Env } from "../types.js";
 
-export const VERSION = "1.0.0"; // 站台版本（/api/health 回報；發佈時同步 git tag）
+export const VERSION = "2.0.0"; // 站台版本（/api/health 回報；發佈時同步 git tag）
 
 // 站台正式網址（canonical、og、sitemap、RSS 用）：優先 env.SITE_ORIGIN（wrangler.toml
 // [vars]；fork 的人改那裡就好，程式碼不寫死網域），沒設定就用請求本身的 origin。

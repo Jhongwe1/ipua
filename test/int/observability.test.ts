@@ -26,7 +26,7 @@ describe("/api/health", () => {
     const r = await healthGet(makeCtx({ url: ORIGIN + "/api/health" }));
     const j: any = await r.json();
     expect(j.ok).toBe(true);
-    expect(j.version).toBe("1.0.0");
+    expect(j.version).toBe("2.0.0");
     expect(j.db).toBe(true);
   });
 });

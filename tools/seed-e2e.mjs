@@ -6,7 +6,13 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, rmSync } from "node:fs";
 
 const STATE = ".wrangler/e2e-state";
-rmSync(new URL("../" + STATE, import.meta.url), { recursive: true, force: true });
+// Windows 上殘留的 workerd 可能還握著檔案 → 給幾次重試（真的鎖死會拋 EPERM，提示殺進程）
+rmSync(new URL("../" + STATE, import.meta.url), {
+  recursive: true,
+  force: true,
+  maxRetries: 10,
+  retryDelay: 300
+});
 
 const run = (args) =>
   execFileSync("npx", args, { stdio: "inherit", shell: process.platform === "win32" });
