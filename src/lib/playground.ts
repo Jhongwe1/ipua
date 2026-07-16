@@ -100,10 +100,13 @@ export function cleanChat(b: any): CleanChatResult {
 }
 
 // 把統一格式的 messages 轉成各家上游的串流請求 → { url, headers, body }
+// maxTokens（Phase K demo 用）：有帶＝三種上游都強制回覆長度上限；沒帶＝會員路徑原行為
+//（anthropic 必填、維持 PG_LIMITS.maxTokens；openai/gemini 不設限）。
 export function buildUpstream(
   ch: ChannelRow,
   model: string,
-  messages: ChatMsg[]
+  messages: ChatMsg[],
+  maxTokens?: number
 ): { url: string; headers: Record<string, string>; body: string } {
   const sys = messages
     .filter(function (m) {
@@ -127,7 +130,7 @@ export function buildUpstream(
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: PG_LIMITS.maxTokens,
+        max_tokens: maxTokens || PG_LIMITS.maxTokens,
         stream: true,
         system: sys || undefined,
         messages: rest.map(function (m) {
@@ -146,12 +149,14 @@ export function buildUpstream(
         contents: rest.map(function (m) {
           return { role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] };
         }),
-        systemInstruction: sys ? { parts: [{ text: sys }] } : undefined
+        systemInstruction: sys ? { parts: [{ text: sys }] } : undefined,
+        generationConfig: maxTokens ? { maxOutputTokens: maxTokens } : undefined
       })
     };
   }
   // openai / custom：OpenAI 相容介面（system 直接留在 messages 裡）
   const body: Record<string, unknown> = { model: model, stream: true, messages: messages };
+  if (maxTokens) body.max_tokens = maxTokens;
   // 串流尾端要上游回報 token 用量（計量用）。只對 kind='openai' 加 —
   // custom 常是本地／自架服務，可能拒收不認識的欄位（記在 DEBT）。
   if (ch.kind === "openai") body.stream_options = { include_usage: true };

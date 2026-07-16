@@ -168,7 +168,7 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 
 ### GET /api/settings — 網站公開設定
 
-回 `{ brand, custom, pg_open, contact_url }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設（＝正式網址主機名）。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。`contact_url`＝管理員聯絡連結（會員頁登入閘門的「聯絡我」鈕；空字串＝沒設定、前端不顯示該鈕）。
+回 `{ brand, custom, pg_open, contact_url, demo }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設（＝正式網址主機名）。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。`contact_url`＝管理員聯絡連結（會員頁登入閘門的「聯絡我」鈕；空字串＝沒設定、前端不顯示該鈕）。`demo`＝Playground 體驗模式是否開放匿名試聊（布林；渠道與額度細節不公開）。
 
 ## 5. 管理員 API 詳細
 
@@ -266,6 +266,13 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 | `quota_pg_day` | Playground 每日訊息數的全域預設；`null` ＝ 內建預設 200 |
 | `rl_per_min` | 每分鐘請求數上限（滾動 60 秒、中轉＋Playground 合併計）；`null` ＝ 內建預設 30 |
 | `relay_meter` | `false` ＝ 中轉退回**純直通**（不掃 usage、不寫 req_log）— 計量出怪問題時的免部署保險；`true` ＝ 恢復計量（預設）。平常不要動 |
+| `demo_mode` | `true`／`false` — **Playground 體驗模式**（2026-07-17 v2.0.0）：開啟後**未登入訪客**可直接在 /playground 試聊。要同時設好 `demo_channel` 才生效。fail-closed 限流（詳見 ADR-0009）：每 IP 每分鐘／每日＋全站每日三道上限，限流器故障時直接 503 絕不放行 |
+| `demo_channel` | 體驗模式鎖定的渠道 slug（**必設**，沒設＝demo 不生效）；訪客只能用這個渠道 |
+| `demo_models` | 體驗模式的模型白名單（逗號分隔）；空＝該渠道全部模型 |
+| `demo_per_min` | 體驗模式每 IP 每分鐘上限；`null`＝內建預設 3 |
+| `demo_per_ip_day` | 每 IP 每日上限；`null`＝內建預設 10 |
+| `demo_global_day` | **全站**每日上限（燒錢保險）；`null`＝內建預設 200 |
+| `demo_max_tokens` | 強制的回覆 token 上限；`null`＝內建預設 512 |
 
 ```bat
 curl -X PUT https://uaip.cc.cd/api/admin/settings ^
@@ -414,6 +421,8 @@ Authorization: Bearer uak-你的金鑰
 會員在網頁上直接試用中轉渠道裡的模型（2026-07-13 上線）。可選的模型＝各中轉管道的 `models` 清單；
 上游金鑰全程留在伺服器，會員只帶登入 cookie。對話存 D1、綁帳號、跨裝置同步。
 驗證：登入 cookie（要有 `playground` 服務，**或**管理員開了 `pg_open` 全員開放，見 §5）**或** `Authorization: Bearer <管理金鑰>`（以管理員帳號的身分操作，方便 curl／agent 測試）。
+
+**體驗模式（2026-07-17 v2.0.0，ADR-0009）**：管理員開 `demo_mode`＋設 `demo_channel` 後，**完全未登入**的訪客也能打 `GET /api/playground/models`（只回 demo 那一組、渠道顯示名固定「體驗模式」）與 `POST /api/playground/chat`（SSE 第一筆事件是 `{demo:true}` 而非 `{conv}`）。限制：渠道與模型鎖白名單、輸入整包 4000 字、回覆強制 `demo_max_tokens`、**對話不落資料庫**；fail-closed 限流（每 IP 分鐘/日＋全站日；超額 429 `demo-rate-limited`／`demo-quota-exceeded`，限流器故障 503 `demo-unavailable`）。
 
 - `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
 - `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。

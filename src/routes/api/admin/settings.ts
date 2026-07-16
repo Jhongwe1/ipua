@@ -8,15 +8,24 @@
 //            正整數＝覆寫程式內建預設（src/lib/quota.ts QUOTA_DEFAULTS）；null 或空字串＝刪鍵＝回到內建。
 //   relay_meter: true/false — 中轉計量 pump 的總開關（false 存 '0'＝退回純直通；true＝刪鍵＝預設開）。
 //            計量 pump 出怪問題時的免部署保險，平常不要動。
-// 回 { ok, brand, custom, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter }（改完的現況）。
+//   demo_mode / demo_channel / demo_models / demo_per_min / demo_per_ip_day / demo_global_day /
+//   demo_max_tokens（v2.0.0 Phase K 體驗模式）：
+//            demo_mode true/false；demo_channel＝鎖定的渠道 slug（**沒設＝demo 不生效**）；
+//            demo_models＝逗號分隔模型白名單（空＝該渠道全部）；四個數字鍵 null＝回內建預設
+//            （3／10／200／512，src/lib/demo.ts DEMO_DEFAULTS）。
+// 回 { ok, brand, custom, pg_open, quota_*, rl_per_min, relay_meter, demo_* }（改完的現況）。
 import { json, siteBrand } from "../../../lib/site.js";
 import { adminOk, pgOpenAll } from "../../../lib/auth.js";
 import { QUOTA_DEFAULTS } from "../../../lib/quota.js";
+import { DEMO_DEFAULTS, demoCfg } from "../../../lib/demo.js";
 import { audit } from "../../../lib/observe.js";
 import type { RouteCtx } from "../../../types.js";
 
 const QUOTA_KEYS = ["quota_relay_day", "quota_pg_day", "rl_per_min"];
-const ALL_KEYS = ["brand", "contact_url", "pg_open", "relay_meter"].concat(QUOTA_KEYS);
+const DEMO_NUM_KEYS = ["demo_per_min", "demo_per_ip_day", "demo_global_day", "demo_max_tokens"];
+const ALL_KEYS = ["brand", "contact_url", "pg_open", "relay_meter", "demo_mode", "demo_channel", "demo_models"]
+  .concat(QUOTA_KEYS)
+  .concat(DEMO_NUM_KEYS);
 
 export async function onRequestPut(context: RouteCtx): Promise<Response> {
   const { request, env } = context;
@@ -96,6 +105,45 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
         await del("relay_meter"); // 預設就是開
       else await put("relay_meter", "0");
     }
+    // —— demo 體驗模式（Phase K）——
+    if ("demo_mode" in body) {
+      if (body.demo_mode) await put("demo_mode", "1");
+      else await del("demo_mode");
+    }
+    if ("demo_channel" in body) {
+      const dc = String(body.demo_channel == null ? "" : body.demo_channel)
+        .trim()
+        .toLowerCase()
+        .slice(0, 100);
+      if (!dc) await del("demo_channel");
+      else await put("demo_channel", dc);
+    }
+    if ("demo_models" in body) {
+      const dm = String(body.demo_models == null ? "" : body.demo_models)
+        .trim()
+        .slice(0, 1000);
+      if (!dm) await del("demo_models");
+      else await put("demo_models", dm);
+    }
+    for (const k of DEMO_NUM_KEYS) {
+      if (!(k in body)) continue;
+      const v = body[k];
+      if (v === null || v === "") {
+        await del(k);
+        continue;
+      }
+      const n = parseInt(v, 10);
+      if (!Number.isFinite(n) || n < 1) {
+        return json(
+          {
+            error: "bad-input",
+            hint: k + " 要是正整數，或 null＝回到內建預設（" + (DEMO_DEFAULTS as Record<string, number>)[k] + "）"
+          },
+          400
+        );
+      }
+      await put(k, String(n));
+    }
 
     // 稽核：記「帶了哪些鍵、改成什麼」（站名與開關不是秘密，可直接記值）
     const changed = ALL_KEYS.filter(function (k) {
@@ -118,12 +166,13 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
 
     // 回傳改完的現況（settings 沒鍵時顯示內建預設）
     const res = await env.DB.prepare(
-      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','quota_relay_day','quota_pg_day','rl_per_min','relay_meter')"
+      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','quota_relay_day','quota_pg_day','rl_per_min','relay_meter','demo_channel','demo_models')"
     ).all();
     const st: Record<string, string> = {};
     ((res.results || []) as { k: string; v: string }[]).forEach(function (r) {
       st[r.k] = r.v;
     });
+    const dcfg = await demoCfg(env);
     return json({
       ok: true,
       brand: st.brand || siteBrand(env, request),
@@ -133,7 +182,14 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
       quota_relay_day: st.quota_relay_day ? parseInt(st.quota_relay_day, 10) : QUOTA_DEFAULTS.quota_relay_day,
       quota_pg_day: st.quota_pg_day ? parseInt(st.quota_pg_day, 10) : QUOTA_DEFAULTS.quota_pg_day,
       rl_per_min: st.rl_per_min ? parseInt(st.rl_per_min, 10) : QUOTA_DEFAULTS.rl_per_min,
-      relay_meter: st.relay_meter !== "0"
+      relay_meter: st.relay_meter !== "0",
+      demo_mode: dcfg.on,
+      demo_channel: st.demo_channel || "",
+      demo_models: st.demo_models || "",
+      demo_per_min: dcfg.on ? dcfg.perMin : DEMO_DEFAULTS.demo_per_min,
+      demo_per_ip_day: dcfg.on ? dcfg.perIpDay : DEMO_DEFAULTS.demo_per_ip_day,
+      demo_global_day: dcfg.on ? dcfg.globalDay : DEMO_DEFAULTS.demo_global_day,
+      demo_max_tokens: dcfg.on ? dcfg.maxTokens : DEMO_DEFAULTS.demo_max_tokens
     });
   } catch (e: any) {
     return json({ error: "save-failed", detail: String((e && e.message) || e) }, 500);

@@ -123,6 +123,13 @@ const PG_CSS = `
     .pg-ta{font-size:16px}
     .pg-top select{font-size:16px}
   }
+  /* 體驗模式橫幅（Phase K）：未登入＋demo 開時顯示在聊天框上方 */
+  .pg-demo{border:1px solid var(--pgline);background:var(--card);border-radius:12px;padding:10px 14px;
+           margin-bottom:10px;font-size:13px;color:var(--muted);line-height:1.7;box-shadow:var(--pgshadow)}
+  .pg-demo b{color:var(--fg)}
+  .pg-demo a{color:var(--fg);font-weight:700;white-space:nowrap}
+  /* 有橫幅時聊天框讓出高度（橫幅約 54px＋間距） */
+  .pg-demo+.pg{height:calc(100vh - 162px);height:calc(100dvh - 162px)}
 `;
 
 export async function playgroundPageResponse(env: Env, request: Request): Promise<Response> {
@@ -166,6 +173,7 @@ const PG_JS = `
   var SEND_ICON='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   var STOP_ICON='<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>';
   var me=null,groups=[],convs=[],cur=null,msgs=[];
+  var demoMode=false;  // 體驗模式（未登入＋管理員開 demo）：無側欄、對話只活在本頁記憶體
   var streaming=false,aborter=null;
   var UI={};
   var coarse=!!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);
@@ -230,7 +238,15 @@ const PG_JS = `
   function start(){
     MU.me(true).then(function(u){
       me=u;
-      if(!me||!hasSvc()){paint();return;}
+      if(!me){
+        /* 未登入：demo 開著就直接進體驗模式聊天，關著照舊顯示登入閘門 */
+        return api("/api/settings").then(function(s){
+          if(!s.demo){paint();return;}
+          demoMode=true;
+          return api("/api/playground/models").then(function(r){groups=r.rows||[];buildApp();});
+        });
+      }
+      if(!hasSvc()){paint();return;}
       return Promise.all([api("/api/playground/models"),api("/api/playground/conversations")])
         .then(function(rs){groups=rs[0].rows||[];convs=rs[1].rows||[];paint();});
     }).catch(function(e){root.innerHTML='<div class="gate"><p>'+tx("讀取失敗：","Failed: ")+esc(e.message||e)+'</p></div>';});
@@ -240,27 +256,40 @@ const PG_JS = `
   /* ================= 介面骨架 ================= */
   function buildApp(){
     root.innerHTML="";
+    if(demoMode){
+      /* 體驗模式橫幅＋登入 CTA（對話不落伺服器 — 明講給訪客聽） */
+      var bn=el("div","pg-demo");
+      bn.innerHTML="<b>"+tx("體驗模式","Demo mode")+"</b> · "
+        +tx("回覆較短、次數有限；對話只留在這個瀏覽器，不會上傳。","Short replies with limits; chats stay in this browser only.")
+        +' <a href="/auth/login?next=/playground">'+tx("登入解鎖完整功能 →","Sign in for full access →")+"</a>";
+      root.appendChild(bn);
+    }
     var app=el("div","pg");UI.app=app;
 
-    var side=el("aside","pg-side");
-    var nw=el("div","pg-new");
-    var nb=el("button","pg-newbtn","＋ "+tx("新對話","New chat"));
-    nb.addEventListener("click",function(){if(busy())return;newChat();drawer(false);});
-    nw.appendChild(nb);side.appendChild(nw);
-    UI.clist=el("div","pg-convs");side.appendChild(UI.clist);
-    app.appendChild(side);
+    UI.clist=null;
+    if(!demoMode){ /* 體驗模式沒有對話列表（不存伺服器，沒東西可列） */
+      var side=el("aside","pg-side");
+      var nw=el("div","pg-new");
+      var nb=el("button","pg-newbtn","＋ "+tx("新對話","New chat"));
+      nb.addEventListener("click",function(){if(busy())return;newChat();drawer(false);});
+      nw.appendChild(nb);side.appendChild(nw);
+      UI.clist=el("div","pg-convs");side.appendChild(UI.clist);
+      app.appendChild(side);
+    }
 
     var main=el("div","pg-main");
     var top=el("div","pg-top");
-    var hb=el("button","pg-histbtn","☰ "+tx("紀錄","History"));
-    hb.addEventListener("click",function(){drawer(!app.classList.contains("open"));});
-    top.appendChild(hb);
+    if(!demoMode){
+      var hb=el("button","pg-histbtn","☰ "+tx("紀錄","History"));
+      hb.addEventListener("click",function(){drawer(!app.classList.contains("open"));});
+      top.appendChild(hb);
+    }
     UI.sel=el("select");UI.sel.title=tx("選擇模型","Choose a model");
     buildModelSel();
     UI.sel.addEventListener("change",function(){try{localStorage.setItem("ipua-pg-model",UI.sel.value);}catch(e){}});
     top.appendChild(UI.sel);
     // 今日用量（/api/me 的 usage 區塊；管理員無上限顯示 ∞）
-    if(me.usage&&me.usage.pg_today!=null){
+    if(me&&me.usage&&me.usage.pg_today!=null){
       var uq=el("span","pg-usage");
       uq.textContent=tx("今日 ","Today ")+me.usage.pg_today+" / "+(me.usage.pg_limit==null?"∞":me.usage.pg_limit);
       uq.title=tx("今日已用訊息數／每日上限（UTC 午夜重置）","Messages today / daily limit (resets at UTC midnight)");
@@ -352,6 +381,7 @@ const PG_JS = `
     return new Date(t+8*36e5).toISOString().slice(5,10);
   }
   function renderConvList(){
+    if(!UI.clist)return;   // 體驗模式沒有列表
     UI.clist.innerHTML="";
     if(!convs.length){UI.clist.appendChild(el("div","pg-empty",tx("還沒有對話","No conversations yet")));return;}
     convs.forEach(function(c){
@@ -422,7 +452,9 @@ const PG_JS = `
   function hero(){
     if(groups.length)return null;
     var h=el("div","pg-hero");
-    h.appendChild(el("p",null,tx("管理員還沒設定任何模型。","The site owner hasn't configured any models yet.")+(me&&me.is_admin?tx("到「API 中轉站」的管道管理幫渠道加上模型名稱即可。"," Add model names to a channel in the relay admin.") : "")));
+    h.appendChild(el("p",null,
+      demoMode?tx("體驗模式暫時沒有可用的模型，請稍後再來或登入。","Demo mode has no models available right now.")
+      :tx("管理員還沒設定任何模型。","The site owner hasn't configured any models yet.")+(me&&me.is_admin?tx("到「API 中轉站」的管道管理幫渠道加上模型名稱即可。"," Add model names to a channel in the relay admin.") : "")));
     return h;
   }
   function scrollBottom(force){
@@ -498,7 +530,7 @@ const PG_JS = `
     }).then(function(r){
       if(!r.ok){
         return r.json().catch(function(){return{};}).then(function(d){
-          if(d.conv&&!cur){cur=d.conv;refreshList();}
+          if(!demoMode&&d.conv&&!cur){cur=d.conv;refreshList();}
           throw new Error(d.hint||d.error||("HTTP "+r.status));
         });
       }
@@ -514,7 +546,7 @@ const PG_JS = `
             var p=line.slice(5).trim();
             if(!p)continue;
             var j=null;try{j=JSON.parse(p);}catch(e){continue;}
-            if(j.conv&&!cur){
+            if(!demoMode&&j.conv&&!cur){
               cur=j.conv;
               convs.unshift({id:j.conv,title:j.title||text.slice(0,60),channel:channel,model:model,updated_at:new Date().toISOString()});
               renderConvList();

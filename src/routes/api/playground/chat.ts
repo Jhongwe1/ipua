@@ -12,7 +12,7 @@
 //   { done: true }     結束
 // 上游一開始就失敗時不進 SSE，直接回 JSON 錯誤（body 會帶 conv，前端才不會重複開對話）。
 import { json } from "../../../lib/site.js";
-import { isAdminUser } from "../../../lib/auth.js";
+import { isAdminUser, getSessionUser, goodOrigin } from "../../../lib/auth.js";
 import {
   pgUser,
   cleanChat,
@@ -23,9 +23,11 @@ import {
   chModels
 } from "../../../lib/playground.js";
 import { checkQuota } from "../../../lib/quota.js";
+import { demoCfg, demoUser, demoCheck, DEMO_DEFAULTS } from "../../../lib/demo.js";
 import { reportError, reportErrorNow } from "../../../lib/observe.js";
+import type { DemoCfg } from "../../../lib/demo.js";
 import type { UsageAcc } from "../../../lib/playground.js";
-import type { ChannelRow, RouteCtx } from "../../../types.js";
+import type { ChannelRow, RouteCtx, UserRow } from "../../../types.js";
 
 // 會員看的上游錯誤一律用「安全分類字」— 上游的原始錯誤內容（格式、文件連結、專案編號）
 // 會洩漏真實提供商身分，只有管理員能看原文（除錯用）。
@@ -41,13 +43,30 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   const url = new URL(request.url);
   if (!env.DB) return json({ error: "no-db" }, 500);
   const who = await pgUser(request, env, url);
-  if (who.err) return who.err;
-  const user = who.user;
-  const isAdm = isAdminUser(user, env);
+  let user: UserRow;
+  let demo: DemoCfg | null = null;
+  if (who.err) {
+    // Demo 體驗模式（Phase K，ADR-0009）：只接「完全沒登入」的匿名訪客 —
+    // 帶了 Authorization（金鑰打錯）或有登入但沒批准的，照樣回原本的 401/403。
+    if (!request.headers.get("authorization") && !(await getSessionUser(request, env))) {
+      const cfg = await demoCfg(env);
+      if (cfg.on) demo = cfg;
+    }
+    if (!demo) return who.err;
+    if (!goodOrigin(request, url, env)) return json({ error: "bad-origin" }, 403);
+    const gate = await demoCheck(env, demo, request); // fail-closed，在任何 D1 寫入之前
+    if (!gate.ok) return gate.resp;
+    user = await demoUser(env); // req_log 記帳身分（成本記帳自然涵蓋 demo）
+  } else {
+    user = who.user;
+  }
+  const isAdm = demo ? false : isAdminUser(user, env);
 
-  // 配額：一定要在「任何 D1 寫入之前」— 429 時連對話都不會建（管理員豁免）
-  const quota = await checkQuota(env, user, "pg");
-  if (!quota.ok) return quota.resp;
+  if (!demo) {
+    // 會員配額（fail-open）：一定要在「任何 D1 寫入之前」— 429 時連對話都不會建（管理員豁免）
+    const quota = await checkQuota(env, user, "pg");
+    if (!quota.ok) return quota.resp;
+  }
 
   let body: any = null;
   try {
@@ -55,6 +74,22 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   } catch (e) {}
   const v = cleanChat(body);
   if (v.err !== undefined) return json({ error: "bad-input", hint: v.err }, 400);
+
+  if (demo) {
+    // demo 鎖定：渠道只能是指定那個（先擋再查 DB，匿名者探測不到其他渠道 slug）；
+    // 輸入整包 4k 字上限（比會員的 300k 小兩個數量級）
+    if (v.channel !== demo.channel) {
+      return json({ error: "demo-locked", hint: "體驗模式只開放指定的渠道" }, 403);
+    }
+    let total = 0;
+    for (const m of v.messages) total += m.content.length;
+    if (total > DEMO_DEFAULTS.maxInputChars) {
+      return json(
+        { error: "demo-too-long", hint: "體驗模式輸入上限 " + DEMO_DEFAULTS.maxInputChars + " 字 — 登入後可用完整長度" },
+        400
+      );
+    }
+  }
 
   // 渠道與模型（模型一定要在渠道設定的清單裡 — 會員只能用管理員開出來的）
   let ch: ChannelRow | null = null;
@@ -68,14 +103,20 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   if (chModels(ch).indexOf(v.model) < 0) {
     return json({ error: "bad-model", hint: "渠道「" + ch.name + "」沒有開放模型「" + v.model + "」" }, 400);
   }
+  if (demo && demo.models.length && demo.models.indexOf(v.model) < 0) {
+    return json({ error: "demo-locked", hint: "體驗模式沒有開放這個模型" }, 403);
+  }
   if (!ch.api_key)
     return json({ error: "no-upstream-key", hint: "渠道還沒設定上游金鑰，請管理員到 /relay 補上" }, 502);
 
-  // 對話：沒帶 conv_id＝開新對話（標題自動取第一句 user 訊息）
+  // 對話：沒帶 conv_id＝開新對話（標題自動取第一句 user 訊息）。
+  // demo 不落對話表 — 對話只活在訪客瀏覽器裡（convId 維持 null）。
   const now = new Date().toISOString();
   let convId = v.convId,
     newTitle: string | null = null;
-  if (convId) {
+  if (demo) {
+    convId = null;
+  } else if (convId) {
     const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE id=?1 AND user_id=?2")
       .bind(convId, user.id)
       .first();
@@ -96,16 +137,18 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
       .run();
     convId = r.meta.last_row_id;
   }
-  // 先存 user 訊息 — 就算上游掛了，會員的問題也不會消失
-  const lastUser = v.messages[v.messages.length - 1];
-  await env.DB.prepare(
-    "INSERT INTO pg_messages (conv_id,role,content,model,created_at) VALUES (?1,'user',?2,?3,?4)"
-  )
-    .bind(convId, lastUser.content, v.model, now)
-    .run();
+  if (!demo) {
+    // 先存 user 訊息 — 就算上游掛了，會員的問題也不會消失
+    const lastUser = v.messages[v.messages.length - 1];
+    await env.DB.prepare(
+      "INSERT INTO pg_messages (conv_id,role,content,model,created_at) VALUES (?1,'user',?2,?3,?4)"
+    )
+      .bind(convId, lastUser.content, v.model, now)
+      .run();
+  }
 
-  // 打上游
-  const up = buildUpstream(ch, v.model, v.messages);
+  // 打上游（demo 強制低 max_tokens — 燒錢上限的另一半）
+  const up = buildUpstream(ch, v.model, v.messages, demo ? demo.maxTokens : undefined);
   const t0 = Date.now();
   let resp: Response;
   try {
@@ -173,7 +216,8 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
       let full = "",
         errMsg: string | null = null;
       try {
-        await send(newTitle ? { conv: convId, title: newTitle } : { conv: convId });
+        // demo 沒有對話編號 — 第一筆事件改標 demo，前端不做任何對話列表動作
+        await send(demo ? { demo: true } : newTitle ? { conv: convId, title: newTitle } : { conv: convId });
         if (ct.indexOf("json") >= 0 && ct.indexOf("event-stream") < 0) {
           // 上游不理 stream:true、直接回整包 JSON → 一次送完（相容便宜渠道的怪行為）
           const j: any = await resp.json();
@@ -226,25 +270,28 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
       } catch (e: any) {
         errMsg = errMsg || String((e && e.message) || e);
       }
-      // 存回 D1（部分回應也存 — 按「停止」時已生成的內容留著）
+      // 存回 D1（部分回應也存 — 按「停止」時已生成的內容留著）。
+      // demo 只寫 req_log（記帳／限流觀測），對話內容一個字都不落地。
       try {
         const t2 = new Date().toISOString();
         const stmts: D1PreparedStatement[] = [];
-        if (full) {
+        if (!demo && full) {
           stmts.push(
             env.DB.prepare(
               "INSERT INTO pg_messages (conv_id,role,content,model,created_at) VALUES (?1,'assistant',?2,?3,?4)"
             ).bind(convId, full, v.model, t2)
           );
         }
-        stmts.push(
-          env.DB.prepare("UPDATE pg_conversations SET updated_at=?1, channel=?2, model=?3 WHERE id=?4").bind(
-            t2,
-            v.channel,
-            v.model,
-            convId
-          )
-        );
+        if (!demo) {
+          stmts.push(
+            env.DB.prepare("UPDATE pg_conversations SET updated_at=?1, channel=?2, model=?3 WHERE id=?4").bind(
+              t2,
+              v.channel,
+              v.model,
+              convId
+            )
+          );
+        }
         // 計量：req_log 併進同一個 batch（配額計數與延遲/成本研究數據共用）
         stmts.push(
           env.DB.prepare(
