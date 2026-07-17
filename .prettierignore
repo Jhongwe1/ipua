@@ -1,8 +1,11 @@
 # 生成檔／第三方／不碰的手工資產
 node_modules
 .wrangler
-lib/vendor
-lib/apidoc.js
+src/lib/vendor
+src/lib/apidoc.ts
+src/lib/openapi.ts
 public
 package-lock.json
+test-results
+playwright-report
 *.md
