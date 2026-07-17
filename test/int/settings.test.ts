@@ -126,6 +126,47 @@ describe("settings 帶哪鍵改哪鍵", () => {
     expect((await onRequestGet(getCtx(false))).status).toBe(401); // 沒授權 → 401
   });
 
+  it("Telegram：存入後回讀遮罩（絕不回明文）、audit 不落 token、空字串清除", async () => {
+    const SECRET = "123456:AAA-secret-token-xyz9";
+    const r = await onRequestPut(ctx({ tg_bot_token: SECRET, tg_chat_id: "424242" }));
+    expect(r.status).toBe(200);
+    const putBody = await r.text();
+    expect(putBody).not.toContain(SECRET); // PUT 回應也不能有明文
+    const j: any = JSON.parse(putBody);
+    expect(j.tg_token_set).toBe(true);
+    expect(j.tg_token_hint).toBe("…xyz9");
+    expect(j.tg_chat_id).toBe("424242");
+    expect(j.tg_active).toBe(true);
+    expect((await getKey("tg_bot_token")).v).toBe(SECRET); // DB 存原文（cron 要用）
+
+    // audit_log 只記 (updated)，不落明文
+    const audits = await env.DB.prepare(
+      "SELECT summary FROM audit_log ORDER BY id DESC LIMIT 1"
+    ).first<any>();
+    expect(audits.summary).toContain("tg_bot_token=(updated)");
+    expect(audits.summary).not.toContain(SECRET);
+
+    // GET 同樣遮罩
+    const getCtx = makeCtx({
+      url: ORIGIN + "/api/admin/settings",
+      init: { headers: { authorization: "Bearer " + TOK } },
+      env: envWith({ LOGS_TOKEN: TOK })
+    });
+    const gBody = await (await onRequestGet(getCtx)).text();
+    expect(gBody).not.toContain(SECRET);
+    const g: any = JSON.parse(gBody);
+    expect(g.tg_token_set).toBe(true);
+    expect(g.tg_token_hint).toBe("…xyz9");
+    expect(g.tg_active).toBe(true);
+
+    // 空字串＝清除
+    const j2: any = await (await onRequestPut(ctx({ tg_bot_token: "", tg_chat_id: "" }))).json();
+    expect(j2.tg_token_set).toBe(false);
+    expect(j2.tg_active).toBe(false);
+    expect(await getKey("tg_bot_token")).toBeNull();
+    expect(await getKey("tg_chat_id")).toBeNull();
+  });
+
   it("站名截斷 60 字；一個鍵都沒帶 → 400；沒授權 → 401", async () => {
     const j: any = await (await onRequestPut(ctx({ brand: "x".repeat(100) }))).json();
     expect(j.brand.length).toBe(60);

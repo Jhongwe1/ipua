@@ -1,7 +1,7 @@
 // src/cron.ts — cron 派工（v2.0.0 Phase I）：備份／日聚合／保留清理／Telegram 告警。
 //
 // 兩條排程（wrangler.toml [triggers]）：
-//   "*/5 * * * *"  → tgAlertScan：掃 errlog 增量、推 Telegram（secrets 未設＝跳過）
+//   "*/5 * * * *"  → tgAlertScan：掃 errlog 增量、推 Telegram（/settings 或 secrets 未設＝跳過）
 //   "17 19 * * *"  → rollupUsageDaily ＋ backupToR2 ＋ purgeOld（UTC 19:17＝台北 03:17 低峰）
 //
 // 紀律：每個 job 各自 try/catch 隔離 — 一個壞不拖累其他；結果寫 settings cron_last_<job>
@@ -28,12 +28,14 @@ async function putSetting(env: Env, k: string, v: string): Promise<void> {
 /**
  * Telegram 告警掃描（每 5 分鐘）：settings tg_cursor（上次送到的 errlog.id）→ 撈增量 →
  * sendMessage → 成功才推進 cursor（失敗下輪重送，至多重複、不會漏）。
- * TG_BOT_TOKEN / TG_CHAT_ID 未設＝直接跳過、cursor 不動 — 之後補設 secrets 會從上次斷點續送。
+ * 憑證來源（2026-07-17 起）：settings 表 tg_bot_token / tg_chat_id（/settings 網頁可設）
+ * **優先**，沒有才用 Cloudflare secrets TG_BOT_TOKEN / TG_CHAT_ID 後備。
+ * 兩邊都沒設＝直接跳過、cursor 不動 — 之後補設會從上次斷點續送。
  */
 export async function tgAlertScan(env: Env): Promise<string> {
-  const token = env.TG_BOT_TOKEN ? String(env.TG_BOT_TOKEN) : "";
-  const chat = env.TG_CHAT_ID ? String(env.TG_CHAT_ID) : "";
-  if (!token || !chat) return "skip：TG secrets 未設";
+  const token = (await getSetting(env, "tg_bot_token")) || (env.TG_BOT_TOKEN ? String(env.TG_BOT_TOKEN) : "");
+  const chat = (await getSetting(env, "tg_chat_id")) || (env.TG_CHAT_ID ? String(env.TG_CHAT_ID) : "");
+  if (!token || !chat) return "skip：Telegram 未設定（/settings 頁或 secrets）";
 
   const cursor = parseInt((await getSetting(env, "tg_cursor")) || "0", 10) || 0;
   const rs = await env.DB.prepare("SELECT id,ts,src,msg,path FROM errlog WHERE id>?1 ORDER BY id LIMIT 30")

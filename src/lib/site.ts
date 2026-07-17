@@ -260,7 +260,7 @@ export function pageShell(o: PageShellOpts): string {
     SHELL_JS +
     "</script>\n" +
     // ?v= 版本參數：assets 有 4 小時邊緣/瀏覽器快取，改了 account.js/adminbar.js 要一起把這裡的版本號調大
-    '<script data-nonce src="/assets/account.js?v=20260717a"></script>\n</body>\n</html>\n'
+    '<script data-nonce src="/assets/account.js?v=20260717b"></script>\n</body>\n</html>\n'
   );
 }
 
@@ -526,7 +526,7 @@ const SHELL_JS = `
          或本機開發才載入 /assets/adminbar.js；一般訪客完全不會下載這支程式 --- */
   try{
     if(localStorage.getItem("ipua-logs-token")||location.hostname==="localhost"||location.hostname==="127.0.0.1"){
-      var abs=document.createElement("script");abs.src="/assets/adminbar.js?v=20260717";document.head.appendChild(abs);
+      var abs=document.createElement("script");abs.src="/assets/adminbar.js?v=20260717b";document.head.appendChild(abs);
     }
   }catch(e){}
   applyI18n();

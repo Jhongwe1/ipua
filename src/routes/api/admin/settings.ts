@@ -12,6 +12,9 @@
 //            正整數＝覆寫程式內建預設（src/lib/quota.ts QUOTA_DEFAULTS）；null 或空字串＝刪鍵＝回到內建。
 //   relay_meter: true/false — 中轉計量 pump 的總開關（false 存 '0'＝退回純直通；true＝刪鍵＝預設開）。
 //            計量 pump 出怪問題時的免部署保險，平常不要動。
+//   tg_bot_token / tg_chat_id（2026-07-17 /settings 頁）：Telegram 告警憑證改可存 D1 —
+//            cron tgAlertScan 讀取 **D1 優先、Cloudflare secrets 後備**；空字串＝刪鍵。
+//            token 回讀一律遮罩（tg_token_set/tg_token_hint）、audit 不落明文。
 //   demo_mode / demo_channel / demo_models / demo_per_min / demo_per_ip_day / demo_global_day /
 //   demo_max_tokens（v2.0.0 Phase K 體驗模式）：
 //            demo_mode true/false；demo_channel＝鎖定的渠道 slug（**沒設＝demo 不生效**）；
@@ -34,10 +37,20 @@ const ALL_KEYS = [
   "relay_meter",
   "demo_mode",
   "demo_channel",
-  "demo_models"
+  "demo_models",
+  // Telegram 告警（2026-07-17 /settings 頁上線時加）：存 D1 settings，cron 讀取時
+  // **D1 優先、Cloudflare secrets（TG_BOT_TOKEN/TG_CHAT_ID）後備**。空字串＝刪鍵。
+  // 跟中轉管道上游金鑰同一套資安待遇：回讀遮罩、audit 不落明文。
+  "tg_bot_token",
+  "tg_chat_id"
 ]
   .concat(QUOTA_KEYS)
   .concat(DEMO_NUM_KEYS);
+
+// Telegram bot token 的遮罩提示（同 relay 管道 key_hint 精神：只給尾 4 碼）
+function tgHint(v: string | undefined): string {
+  return v ? "…" + v.slice(-4) : "";
+}
 
 // 設定表目前的原況（給 /settings 管理頁當編輯初值）。數字鍵沒設過＝null；
 // 前端拿 defaults 當 placeholder，空欄送 null＝清掉覆寫、回到內建預設。
@@ -49,7 +62,7 @@ export async function onRequestGet(context: RouteCtx): Promise<Response> {
   try {
     const res = await env.DB.prepare(
       "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','pg_open','relay_meter'," +
-        "'quota_relay_day','quota_pg_day','rl_per_min'," +
+        "'quota_relay_day','quota_pg_day','rl_per_min','tg_bot_token','tg_chat_id'," +
         "'demo_mode','demo_channel','demo_models','demo_per_min','demo_per_ip_day','demo_global_day','demo_max_tokens')"
     ).all();
     const st: Record<string, string> = {};
@@ -78,6 +91,13 @@ export async function onRequestGet(context: RouteCtx): Promise<Response> {
       demo_per_ip_day: numOrNull(st.demo_per_ip_day),
       demo_global_day: numOrNull(st.demo_global_day),
       demo_max_tokens: numOrNull(st.demo_max_tokens),
+      // Telegram 告警：token 絕不回明文（只回 set/hint）；chat id 不是秘密可回。
+      // tg_active＝告警實際會不會發（D1 或 secrets 湊齊 token+chat 其一即可）。
+      tg_chat_id: st.tg_chat_id || "",
+      tg_token_set: !!st.tg_bot_token,
+      tg_token_hint: tgHint(st.tg_bot_token),
+      tg_env_set: !!(env.TG_BOT_TOKEN && env.TG_CHAT_ID),
+      tg_active: !!(st.tg_bot_token || env.TG_BOT_TOKEN) && !!(st.tg_chat_id || env.TG_CHAT_ID),
       // 只放「可用 PUT 設定」的數字鍵（DEMO_DEFAULTS 另含內部用的 maxInputChars，不外流）
       defaults: {
         quota_relay_day: QUOTA_DEFAULTS.quota_relay_day,
@@ -216,12 +236,29 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
       }
       await put(k, String(n));
     }
+    // —— Telegram 告警（存 D1；cron 讀取 D1 優先、secrets 後備）——
+    if ("tg_bot_token" in body) {
+      const v = String(body.tg_bot_token == null ? "" : body.tg_bot_token)
+        .trim()
+        .slice(0, 100);
+      if (!v) await del("tg_bot_token");
+      else await put("tg_bot_token", v);
+    }
+    if ("tg_chat_id" in body) {
+      const v = String(body.tg_chat_id == null ? "" : body.tg_chat_id)
+        .trim()
+        .slice(0, 50);
+      if (!v) await del("tg_chat_id");
+      else await put("tg_chat_id", v);
+    }
 
-    // 稽核：記「帶了哪些鍵、改成什麼」（站名與開關不是秘密，可直接記值）
+    // 稽核：記「帶了哪些鍵、改成什麼」（站名與開關不是秘密，可直接記值；
+    // tg_bot_token 是秘密 — 只記「有更新」，明文絕不進 audit_log）
     const changed = ALL_KEYS.filter(function (k) {
       return k in body;
     })
       .map(function (k) {
+        if (k === "tg_bot_token") return "tg_bot_token=" + (body[k] ? "(updated)" : "(cleared)");
         return k + "=" + String(body[k]).slice(0, 60);
       })
       .join(", ");
@@ -238,7 +275,7 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
 
     // 回傳改完的現況（settings 沒鍵時顯示內建預設）
     const res = await env.DB.prepare(
-      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','quota_relay_day','quota_pg_day','rl_per_min','relay_meter','demo_channel','demo_models')"
+      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','quota_relay_day','quota_pg_day','rl_per_min','relay_meter','demo_channel','demo_models','tg_bot_token','tg_chat_id')"
     ).all();
     const st: Record<string, string> = {};
     ((res.results || []) as { k: string; v: string }[]).forEach(function (r) {
@@ -261,7 +298,11 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
       demo_per_min: dcfg.on ? dcfg.perMin : DEMO_DEFAULTS.demo_per_min,
       demo_per_ip_day: dcfg.on ? dcfg.perIpDay : DEMO_DEFAULTS.demo_per_ip_day,
       demo_global_day: dcfg.on ? dcfg.globalDay : DEMO_DEFAULTS.demo_global_day,
-      demo_max_tokens: dcfg.on ? dcfg.maxTokens : DEMO_DEFAULTS.demo_max_tokens
+      demo_max_tokens: dcfg.on ? dcfg.maxTokens : DEMO_DEFAULTS.demo_max_tokens,
+      tg_chat_id: st.tg_chat_id || "",
+      tg_token_set: !!st.tg_bot_token,
+      tg_token_hint: tgHint(st.tg_bot_token),
+      tg_active: !!(st.tg_bot_token || env.TG_BOT_TOKEN) && !!(st.tg_chat_id || env.TG_CHAT_ID)
     });
   } catch (e: any) {
     return json({ error: "save-failed", detail: String((e && e.message) || e) }, 500);

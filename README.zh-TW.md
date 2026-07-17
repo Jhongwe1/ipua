@@ -1,6 +1,6 @@
 # uaip — edge-native LLM 中轉站＋個人門戶
 
-[![CI](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml)
+[![CI](https://github.com/Jhongwe1/uaip/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhongwe1/uaip/actions/workflows/ci.yml)
 [![線上 demo — 免登入直接試](https://img.shields.io/badge/live%20demo-%E5%85%8D%E7%99%BB%E5%85%A5%E7%9B%B4%E6%8E%A5%E8%A9%A6-2ea44f)](https://uaip.cc.cd/playground)
 &nbsp;線上：**<https://uaip.cc.cd>** · English: **[README.md](./README.md)**
 
@@ -24,9 +24,9 @@
 | **API 中轉站** | `/relay/{渠道}/…` | 會員一把 `uak-` 金鑰＋一個網址接上任何上游（OpenAI／Anthropic／Gemini／自架）。上游金鑰永遠不離開伺服器。串流直通；每人每日配額＋滑動窗限流在 **Durable Object 裡原子執法**；只從**回應**串流掃 token／延遲計量。 |
 | **LLM Playground** | `/playground` | 網頁聊天（同一批渠道）；對話存 D1；SSE 串流、上游錯誤對會員淨化。**公開體驗模式**：匿名訪客免帳號可試聊（鎖渠道模型、fail-closed 限流）。 |
 | **VPN 訂閱** | `/vpn` | 多上游合併成一條會員網址。未被批准的人**完全看不到它的存在**（選單、頁面、API 欄位全隱形）。 |
-| **內容門戶** | `/news` `/articles` `/p/{slug}` | SSR 新聞／文章系統（圖片存 D1、RSS、sitemap、OG/JSON-LD）；自訂頁面用 API 就能開。 |
+| **內容門戶** | `/news` `/articles` `/p/{slug}` | SSR 新聞／文章系統（圖片存 D1、RSS、sitemap、OG/JSON-LD）；自訂頁面用 API 或 /settings 網頁就能開。 |
 | **工具** | `/` `/ip` `/ua` | 最早的 IP／UA 查詢 SPA。 |
-| **管理** | `/members` `/admin` `/logs` `/api-docs` | 會員／服務／配額管理、文章後台、訪客＋錯誤＋用量（含成本）儀表板、公開 API 文件（敘事＋互動式 OpenAPI）。 |
+| **管理** | `/settings` `/members` `/admin` `/logs` `/api-docs` | 管理員設定頁（站名、配額、體驗模式、Telegram 告警、模型定價、自訂頁面 — API 能設的網頁全能設）、會員／服務／配額管理、文章後台、訪客＋錯誤＋用量（含成本）儀表板、公開 API 文件（敘事＋互動式 OpenAPI）。 |
 
 身分：Google OAuth → HttpOnly session（sid 只存雜湊）。每個會員可**分服務批准**
 （relay／vpn／playground）；管理員＝環境變數欽定的信箱清單。所有管理變更都寫稽核日誌。
@@ -73,7 +73,7 @@ flowchart LR
 
 ## 工程證據（v2.0.0）
 
-- **317 個單元／整合測試跑在 workerd 裡**（`@cloudflare/vitest-pool-workers`）— 跟正式站
+- **321 個單元／整合測試跑在 workerd 裡**（`@cloudflare/vitest-pool-workers`）— 跟正式站
   同一顆 runtime：真的 D1、真的 Durable Object（`Promise.all` 併發測試釘住「恰好 limit 個過」）、
   真的串流。上游用 fetchMock 攔截，斷言「上游實際收到什麼」（標頭剝除、金鑰置換、
   串流位元組保真、demo 模式強制 max_tokens）。
@@ -100,13 +100,13 @@ npm ci                    # 開發工具鏈 — 執行期依然零依賴
 npm run migrate:local     # 從 migrations/ 建本機 D1
 npm run seed              # 選用：本機種子（管理員＋會員＋示範渠道）
 npm run dev               # http://localhost:8787（localhost 的管理員 API 免金鑰）
-npm run checks            # eslint＋typecheck＋317 個測試
+npm run checks            # eslint＋typecheck＋321 個測試
 npm run e2e               # Playwright（自己起 mock 上游＋wrangler dev）
 npm run deploy            # 重建 apidoc＋openapi，然後 wrangler deploy
 npm run migrate:remote    # 正式庫套新 migration（要在 deploy 之前跑）
 ```
 
-首次設定（Cloudflare 登入、Google OAuth 憑證、管理員信箱、R2 備份桶、Telegram 告警）
+首次設定（Cloudflare 登入、Google OAuth 憑證、管理員信箱、R2 備份桶、Telegram 告警 — 告警也能直接在 /settings 管理頁設定）
 見 [ADMIN.md](./ADMIN.md)。API 快速上手（發文、開頁面、掛選單）見 [API.md](./API.md) —
 線上版在 [`/api-docs`](https://uaip.cc.cd/api-docs)（含互動式 OpenAPI 參考，
 規格在 [`/openapi.json`](https://uaip.cc.cd/openapi.json)）。

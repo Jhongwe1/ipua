@@ -4,8 +4,8 @@
 
    2026-07-17 起的配置（管理員要求）：
      - 側邊欄「選單」標題右邊一顆小 ✎ ＝ 進入選單編輯模式（以前是列表裡的「編輯選單」項）
-     - 「管理員」區只剩三頁：管理員設定（/settings）、訪客紀錄（/logs）、API 文件（/api-docs）；
-       文章頁另有情境式「編輯這篇文章」
+     - 「管理員」區收斂成四頁：管理員設定（/settings）、成員管理（/members）、
+       訪客紀錄（/logs）、API 文件（/api-docs）；文章頁另有情境式「編輯這篇文章」
      - /news、/articles 列表頁的頁首多一顆「＋」＝新增文章（以前是列表裡的「新增文章」項）
      - 網站名稱改到 /settings 頁；window.__ipuaMenuEdit 供 /settings 的「✎ 編輯選單」鈕呼叫
    編輯選單＝把側邊欄變成編輯器（↑↓ 排序、改名、刪除、＋連結/分類、還原預設），即時自動儲存。 */
@@ -119,9 +119,11 @@
     sec.setAttribute("data-en", "Admin"); sec.setAttribute("data-zh", "管理員");
     host.appendChild(sec);
 
-    // 2026-07-17 統整：固定三頁（其餘入口在 /settings 的「其他管理頁」與頭像選單）
+    // 2026-07-17 統整（稍晚管理員要求把成員管理加回來）：固定四頁
+    //（其餘入口在 /settings 的「其他管理頁」與頭像選單）
     if (artM) host.appendChild(itemLink("編輯這篇文章", "Edit this post", "/admin?edit=" + artM[2]));
     host.appendChild(itemLink("管理員設定", "Admin settings", "/settings"));
+    host.appendChild(itemLink("成員管理", "Members", "/members"));
     host.appendChild(itemLink("訪客紀錄", "Visitor logs", "/logs"));
     host.appendChild(itemLink("API 文件", "API docs", "/api-docs"));
   }

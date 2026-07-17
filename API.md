@@ -258,7 +258,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 
 ### 網站設定：GET / PUT /api/admin/settings
 
-**GET**（2026-07-17，/settings 管理頁的數據源）回目前**存的**原況：`{ ok, brand, custom, contact_url, pg_open, relay_meter, quota_relay_day, quota_pg_day, rl_per_min, demo_mode, demo_active, demo_channel, demo_models, demo_per_min, demo_per_ip_day, demo_global_day, demo_max_tokens, defaults }` — 數字鍵沒設過回 `null`（不是內建預設值），內建預設放在 `defaults` 物件；`demo_mode` 是開關本身的儲存值、`demo_active` 才是真正生效與否（開關＋`demo_channel` 都要有）。
+**GET**（2026-07-17，/settings 管理頁的數據源）回目前**存的**原況：`{ ok, brand, custom, contact_url, pg_open, relay_meter, quota_relay_day, quota_pg_day, rl_per_min, demo_mode, demo_active, demo_channel, demo_models, demo_per_min, demo_per_ip_day, demo_global_day, demo_max_tokens, tg_chat_id, tg_token_set, tg_token_hint, tg_env_set, tg_active, defaults }` — 數字鍵沒設過回 `null`（不是內建預設值），內建預設放在 `defaults` 物件；`demo_mode` 是開關本身的儲存值、`demo_active` 才是真正生效與否（開關＋`demo_channel` 都要有）；Telegram bot token **絕不回明文**（只回 `tg_token_set` 與尾 4 碼 `tg_token_hint`）。
 
 **PUT：本體帶哪個鍵就改哪個鍵，沒帶的不動**（2026-07-14 起；跟文章／選單的整包覆蓋不同）。回 `{ ok, brand, custom, contact_url, pg_open, quota_relay_day, quota_pg_day, rl_per_min, relay_meter, demo_* }`（改完的現況；配額鍵沒設過時顯示內建預設）。
 
@@ -271,6 +271,8 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 | `quota_pg_day` | Playground 每日訊息數的全域預設；`null` ＝ 內建預設 200 |
 | `rl_per_min` | 每分鐘請求數上限（滾動 60 秒、中轉＋Playground 合併計）；`null` ＝ 內建預設 30 |
 | `relay_meter` | `false` ＝ 中轉退回**純直通**（不掃 usage、不寫 req_log）— 計量出怪問題時的免部署保險；`true` ＝ 恢復計量（預設）。平常不要動 |
+| `tg_bot_token` | Telegram 告警的 bot token（2026-07-17 起可存這裡；最長 100 字，**空字串＝刪鍵**）。cron 每 5 分鐘掃 errlog 推播時**這裡優先**、Cloudflare secrets（TG_BOT_TOKEN）後備。回讀一律遮罩（`tg_token_set`／`tg_token_hint`）、audit 不落明文。網頁在 /settings 的「Telegram 告警」卡 |
+| `tg_chat_id` | Telegram 告警的 chat id（最長 50 字，空字串＝刪鍵；同樣 D1 優先、secrets TG_CHAT_ID 後備）。token 與 chat id **都設好**告警才會發送 |
 | `demo_mode` | `true`／`false` — **Playground 體驗模式**（2026-07-17 v2.0.0）：開啟後**未登入訪客**可直接在 /playground 試聊。要同時設好 `demo_channel` 才生效。fail-closed 限流（詳見 ADR-0009）：每 IP 每分鐘／每日＋全站每日三道上限，限流器故障時直接 503 絕不放行 |
 | `demo_channel` | 體驗模式鎖定的渠道 slug（**必設**，沒設＝demo 不生效）；訪客只能用這個渠道 |
 | `demo_models` | 體驗模式的模型白名單（逗號分隔）；空＝該渠道全部模型 |

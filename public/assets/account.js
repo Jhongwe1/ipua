@@ -165,7 +165,7 @@
         mountAvatar(d.user);
         // 管理員 → 載入側邊欄編輯工具（若還沒被 index.html/shell 的判斷載入）
         if (d.user.is_admin && !window.__ipuaAdminbar) {
-          var s = document.createElement("script"); s.src = "/assets/adminbar.js?v=20260717"; document.head.appendChild(s);
+          var s = document.createElement("script"); s.src = "/assets/adminbar.js?v=20260717b"; document.head.appendChild(s);
         }
       } else {
         mountLogin();   // 提示 cookie 過期／session 失效

@@ -1,6 +1,6 @@
 # uaip — an edge-native LLM gateway & personal portal
 
-[![CI](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhongwe1/ipua/actions/workflows/ci.yml)
+[![CI](https://github.com/Jhongwe1/uaip/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhongwe1/uaip/actions/workflows/ci.yml)
 [![Try the live demo — no login needed](https://img.shields.io/badge/live%20demo-try%20it%20without%20signing%20in-2ea44f)](https://uaip.cc.cd/playground)
 &nbsp;Live: **<https://uaip.cc.cd>** · 繁體中文版說明：**[README.zh-TW.md](./README.zh-TW.md)**
 
@@ -26,9 +26,9 @@ No servers, no containers, no bundler for the runtime — `git push` is the whol
 | **LLM gateway (relay)** | `/relay/{channel}/…` | Members use one `uak-` key + one base URL for any upstream (OpenAI / Anthropic / Gemini / self-hosted). Upstream keys never leave the server. Streaming passthrough; per-user daily quotas + sliding-window rate limits enforced **atomically in a Durable Object**; token/latency metering scanned from the **response** stream only. |
 | **LLM playground** | `/playground` | Web chat over the same channels; conversations persisted in D1; SSE streaming with provider-identity sanitization. **Public demo mode**: anonymous visitors get a locked-down, fail-closed-limited taste without an account. |
 | **VPN subscription** | `/vpn` | Multi-upstream merge behind one member URL. **Invisible** to anyone not granted the service (menu, page, and API fields all hide). |
-| **Content portal** | `/news` `/articles` `/p/{slug}` | SSR news/article CMS with D1-stored images, RSS, sitemap, OG/JSON-LD; custom pages creatable via API. |
+| **Content portal** | `/news` `/articles` `/p/{slug}` | SSR news/article CMS with D1-stored images, RSS, sitemap, OG/JSON-LD; custom pages creatable via API or the /settings admin page. |
 | **Tools** | `/` `/ip` `/ua` | The original IP/UA lookup SPA. |
-| **Admin** | `/members` `/admin` `/logs` `/api-docs` | Member/service/quota management, article CMS, visitor + error + usage-with-cost dashboards, public API docs (narrative + interactive OpenAPI). |
+| **Admin** | `/settings` `/members` `/admin` `/logs` `/api-docs` | Admin settings page (site name, quotas, demo mode, Telegram alerts, model pricing, custom pages — everything the API can set, settable from the web), member/service/quota management, article CMS, visitor + error + usage-with-cost dashboards, public API docs (narrative + interactive OpenAPI). |
 
 Identity: Google OAuth → HttpOnly session (hashed sids). Per-service grants (`relay` / `vpn` /
 `playground`) per member; admin = env-pinned email list. Everything admin-mutable is audit-logged.
@@ -76,7 +76,7 @@ Also: [Production report with real numbers](./docs/REPORT.md) ·
 
 ## Engineering evidence (v2.0.0)
 
-- **317 unit/integration tests running inside workerd** (`@cloudflare/vitest-pool-workers`) —
+- **321 unit/integration tests running inside workerd** (`@cloudflare/vitest-pool-workers`) —
   the same runtime as production: real D1, real Durable Objects (`Promise.all` concurrency
   tests pin "exactly `limit` requests pass"), real streams, real `crypto.subtle`. Upstreams
   are mocked with `fetchMock` so tests assert *what actually got forwarded* (header
@@ -112,7 +112,7 @@ src/              the Worker (TypeScript, strict): entry + hand-written router +
   src/do/         RateLimiter Durable Object (SQLite-backed, atomic)
 public/           static assets (SPA + client scripts + vendored Scalar + _headers CSP)
 migrations/       D1 schema, the only source of truth
-test/             vitest-pool-workers suites (317 unit + integration)
+test/             vitest-pool-workers suites (321 unit + integration)
 e2e/              Playwright flows (real browser × wrangler dev × mock upstream)
 tools/            build-apidoc / build-openapi / check-csp / seeds / mock-upstream
 docs/             ADRs, threat model, comparison, production report, openapi.yaml
@@ -128,14 +128,14 @@ npm ci                    # dev toolchain — the runtime itself has zero depend
 npm run migrate:local     # create local D1 from migrations/
 npm run seed              # optional: local admin/member/channel seed
 npm run dev               # http://localhost:8787 (admin APIs need no token on localhost)
-npm run checks            # eslint + typecheck + 317 tests
+npm run checks            # eslint + typecheck + 321 tests
 npm run e2e               # Playwright (spins up mock upstream + wrangler dev itself)
 npm run deploy            # rebuild apidoc + openapi, then wrangler deploy
 npm run migrate:remote    # apply new migrations to production (run BEFORE deploy)
 ```
 
 First-time setup (Cloudflare login, Google OAuth secrets, admin emails, R2 bucket,
-optional Telegram alerts): see [ADMIN.md](./ADMIN.md). Quick API tour (publish a post,
+optional Telegram alerts — also configurable from the `/settings` admin page): see [ADMIN.md](./ADMIN.md). Quick API tour (publish a post,
 create a page, wire the menu): see [API.md](./API.md) — served live at
 [`/api-docs`](https://uaip.cc.cd/api-docs) with an interactive OpenAPI reference,
 spec at [`/openapi.json`](https://uaip.cc.cd/openapi.json).

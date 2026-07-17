@@ -179,6 +179,28 @@ const BODY = `
     </div>
   </div>
 
+  <!-- Telegram 告警 -->
+  <div class="card">
+    <div class="card-title">Telegram 告警</div>
+    <p class="hint">每 5 分鐘掃站內錯誤（errlog）增量，打包推播到 Telegram。跟 @BotFather 建 bot 拿 token、跟 bot 說句話後用 getUpdates 拿 chat id（詳見 ADMIN.md）。這裡的設定存資料庫並<b>優先於</b> Cloudflare secrets。</p>
+    <div id="tgState" class="hint"></div>
+    <div class="grid2">
+      <div class="field">
+        <label for="fTgToken">Bot token</label>
+        <input id="fTgToken" type="password" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="fTgChat">Chat ID</label>
+        <input id="fTgChat" type="text" autocomplete="off" placeholder="例：123456789">
+      </div>
+    </div>
+    <div class="saverow">
+      <button id="saveTg" class="primary" type="button">儲存</button>
+      <button id="clearTg" class="ghost danger" type="button">清除</button>
+      <span id="msgTg" class="savemsg"></span>
+    </div>
+  </div>
+
   <!-- 模型定價 -->
   <div class="card">
     <div class="card-title">模型定價（成本記帳）</div>
@@ -302,8 +324,19 @@ const PAGE_JS = `
       $(p[0]).value=numVal(st[p[1]]);
       $(p[0]).placeholder=D[p[1]]!=null?("內建預設 "+D[p[1]]):"";
     });
+    fillTg();
     renderPrices();
     renderPages();
+  }
+  // Telegram 卡：token 只顯示遮罩提示（明文伺服器不回）；欄位留空＝保留現值
+  function fillTg(){
+    $("fTgToken").value="";
+    $("fTgToken").placeholder=st.tg_token_set?("（留空＝不變；目前 "+st.tg_token_hint+"）"):"123456:ABC…（@BotFather 給的）";
+    $("fTgChat").value=st.tg_chat_id||"";
+    var n=$("tgState");
+    if(st.tg_active)n.textContent="✓ 告警生效中"+(st.tg_token_set?"（網頁設定）":"（Cloudflare secrets）")+"。";
+    else if(st.tg_token_set||st.tg_chat_id)n.textContent="⚠ 只設定了一半（token 與 chat id 都要有）— 目前不會發送。";
+    else n.textContent="尚未設定 — 目前不會發送告警。";
   }
   function paintTgl(btn,on){
     btn.classList.toggle("on",!!on);
@@ -372,6 +405,22 @@ const PAGE_JS = `
     saving($("saveDemo"),$("msgDemo"),
       api("/api/admin/settings",{method:"PUT",json:body}),
       function(){st.demo_channel=body.demo_channel;st.demo_models=body.demo_models;demoStateNote();});
+  });
+
+  $("saveTg").addEventListener("click",function(){
+    var body={tg_chat_id:$("fTgChat").value.trim()};
+    var tok=$("fTgToken").value.trim();
+    if(tok)body.tg_bot_token=tok;   // 留空＝不帶＝保留舊 token（清除請用「清除」鈕）
+    saving($("saveTg"),$("msgTg"),
+      api("/api/admin/settings",{method:"PUT",json:body}),
+      function(d){st.tg_chat_id=d.tg_chat_id;st.tg_token_set=d.tg_token_set;
+        st.tg_token_hint=d.tg_token_hint;st.tg_active=d.tg_active;fillTg();});
+  });
+  $("clearTg").addEventListener("click",function(){
+    if(!confirm("清除網頁上設定的 Telegram token 與 chat id？（Cloudflare secrets 若有設仍會生效）"))return;
+    saving($("clearTg"),$("msgTg"),
+      api("/api/admin/settings",{method:"PUT",json:{tg_bot_token:"",tg_chat_id:""}}),
+      function(d){st.tg_chat_id="";st.tg_token_set=false;st.tg_token_hint="";st.tg_active=d.tg_active;fillTg();});
   });
 
   $("saveQuota").addEventListener("click",function(){

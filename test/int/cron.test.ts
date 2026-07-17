@@ -79,6 +79,29 @@ describe("tgAlertScan", () => {
     expect(await tgAlertScan(e2)).toBe("無新錯誤");
   });
 
+  it("D1 settings 憑證（/settings 網頁設定）優先於 secrets", async () => {
+    await seedErr("relay.upstream", "db-cred");
+    await env.DB.prepare(
+      "INSERT INTO settings (k,v) VALUES ('tg_bot_token','dbtok'),('tg_chat_id','99')"
+    ).run();
+    let sent: any = null;
+    fetchMock
+      .get("https://api.telegram.org")
+      .intercept({
+        method: "POST",
+        path: "/botdbtok/sendMessage", // D1 的 token 勝出（不是 secrets 的 t123）
+        body(b) {
+          sent = JSON.parse(String(b));
+          return true;
+        }
+      })
+      .reply(200, { ok: true });
+    const e2 = envWith({ TG_BOT_TOKEN: "t123", TG_CHAT_ID: "42" });
+    const note = await tgAlertScan(e2);
+    expect(note).toContain("1 筆");
+    expect(sent.chat_id).toBe("99"); // chat id 也走 D1
+  });
+
   it("Telegram 回 500 → throw、cursor 不推進（下輪重送）", async () => {
     await seedErr("csp", "x");
     fetchMock

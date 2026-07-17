@@ -17,7 +17,7 @@ info:
     * **匿名** — 公開讀取；Playground 體驗模式開啟時匿名可試聊（fail-closed 限流）
   license:
     name: MIT
-    url: https://github.com/Jhongwe1/ipua/blob/main/LICENSE
+    url: https://github.com/Jhongwe1/uaip/blob/main/LICENSE
 servers:
   - url: https://uaip.cc.cd
 tags:
@@ -409,7 +409,7 @@ paths:
   /api/admin/settings:
     get:
       tags: [管理員]
-      summary: 目前存的網站設定原況（數字鍵沒設過回 null；另附 defaults 與 demo_active）
+      summary: 目前存的網站設定原況（數字鍵沒設過回 null；另附 defaults、demo_active 與 Telegram 遮罩狀態）
       security: [{ adminToken: [] }, { sessionCookie: [] }]
       responses:
         "200":
@@ -419,7 +419,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
     put:
       tags: [管理員]
-      summary: 改網站設定（帶哪鍵改哪鍵：brand／contact_url／pg_open／配額全域預設／relay_meter／demo_*）
+      summary: 改網站設定（帶哪鍵改哪鍵：brand／contact_url／pg_open／配額全域預設／relay_meter／demo_*／tg_*）
       security: [{ adminToken: [] }, { sessionCookie: [] }]
       requestBody:
         required: true
