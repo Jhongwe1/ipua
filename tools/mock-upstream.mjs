@@ -19,10 +19,14 @@ http
       req.on("end", () => {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
         for (const c of REPLY) {
-          res.write('data: {"model":"mock-model","choices":[{"delta":{"content":' + JSON.stringify(c) + "}}]}\n\n");
+          res.write(
+            'data: {"model":"mock-model","choices":[{"delta":{"content":' + JSON.stringify(c) + "}}]}\n\n"
+          );
         }
         // usage 尾包（stream_options.include_usage 的回應形狀）— relay/playground 計量靠這個
-        res.write('data: {"model":"mock-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":8}}\n\n');
+        res.write(
+          'data: {"model":"mock-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":8}}\n\n'
+        );
         res.write("data: [DONE]\n\n");
         res.end();
       });

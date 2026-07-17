@@ -14,8 +14,7 @@ rmSync(new URL("../" + STATE, import.meta.url), {
   retryDelay: 300
 });
 
-const run = (args) =>
-  execFileSync("npx", args, { stdio: "inherit", shell: process.platform === "win32" });
+const run = (args) => execFileSync("npx", args, { stdio: "inherit", shell: process.platform === "win32" });
 
 run(["wrangler", "d1", "migrations", "apply", "ipua-logs", "--local", "--persist-to", STATE]);
 
@@ -27,7 +26,17 @@ VALUES ('mock','E2E mock 渠道','openai','http://127.0.0.1:8788','sk-e2e-mock',
 const tmp = new URL("./.seed-e2e.tmp.sql", import.meta.url);
 writeFileSync(tmp, sql);
 try {
-  run(["wrangler", "d1", "execute", "ipua-logs", "--local", "--persist-to", STATE, "--file", "tools/.seed-e2e.tmp.sql"]);
+  run([
+    "wrangler",
+    "d1",
+    "execute",
+    "ipua-logs",
+    "--local",
+    "--persist-to",
+    STATE,
+    "--file",
+    "tools/.seed-e2e.tmp.sql"
+  ]);
 } finally {
   rmSync(tmp, { force: true });
 }

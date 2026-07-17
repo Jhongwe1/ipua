@@ -63,7 +63,6 @@ export type CleanChatResult =
   | { convId: number | null; channel: string; model: string; messages: ChatMsg[]; err?: undefined }
   | { err: string; convId?: undefined; channel?: undefined; model?: undefined; messages?: undefined };
 
- 
 export function cleanChat(b: any): CleanChatResult {
   if (!b || typeof b !== "object") return { err: "需要 JSON 本體" };
   const channel = String(b.channel || "")
@@ -168,7 +167,7 @@ export function buildUpstream(
 }
 
 // 從上游 SSE 的一筆 JSON 取出增量文字；上游夾帶錯誤時丟 Error
- 
+
 export function extractDelta(kind: string, j: any): string {
   if (kind === "anthropic") {
     if (j.type === "error") throw new Error((j.error && j.error.message) || "upstream error");
@@ -189,7 +188,7 @@ export function extractDelta(kind: string, j: any): string {
 }
 
 // 上游不支援串流、直接回一整包 JSON 時的取文字（備援路徑）
- 
+
 export function extractFull(kind: string, j: any): string {
   try {
     if (kind === "anthropic") {
@@ -233,7 +232,6 @@ export interface UsageAcc {
   tokens_out: number | null;
 }
 
- 
 export function extractUsage(kind: string, j: any, acc?: UsageAcc | null): UsageAcc {
   acc = acc || { tokens_in: null, tokens_out: null };
   try {

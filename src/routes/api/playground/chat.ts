@@ -85,7 +85,10 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
     for (const m of v.messages) total += m.content.length;
     if (total > DEMO_DEFAULTS.maxInputChars) {
       return json(
-        { error: "demo-too-long", hint: "體驗模式輸入上限 " + DEMO_DEFAULTS.maxInputChars + " 字 — 登入後可用完整長度" },
+        {
+          error: "demo-too-long",
+          hint: "體驗模式輸入上限 " + DEMO_DEFAULTS.maxInputChars + " 字 — 登入後可用完整長度"
+        },
         400
       );
     }
@@ -284,12 +287,9 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
         }
         if (!demo) {
           stmts.push(
-            env.DB.prepare("UPDATE pg_conversations SET updated_at=?1, channel=?2, model=?3 WHERE id=?4").bind(
-              t2,
-              v.channel,
-              v.model,
-              convId
-            )
+            env.DB.prepare(
+              "UPDATE pg_conversations SET updated_at=?1, channel=?2, model=?3 WHERE id=?4"
+            ).bind(t2, v.channel, v.model, convId)
           );
         }
         // 計量：req_log 併進同一個 batch（配額計數與延遲/成本研究數據共用）

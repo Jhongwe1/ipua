@@ -5,7 +5,6 @@ import { getCookie, safeNext, miniPage, createSession, adminEmails, randToken } 
 import { reportError } from "../../lib/observe.js";
 import type { RouteCtx, UserRow } from "../../types.js";
 
- 
 function b64urlJson(part: string): any {
   try {
     const s = part.replace(/-/g, "+").replace(/_/g, "/");

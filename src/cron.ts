@@ -36,9 +36,7 @@ export async function tgAlertScan(env: Env): Promise<string> {
   if (!token || !chat) return "skip：TG secrets 未設";
 
   const cursor = parseInt((await getSetting(env, "tg_cursor")) || "0", 10) || 0;
-  const rs = await env.DB.prepare(
-    "SELECT id,ts,src,msg,path FROM errlog WHERE id>?1 ORDER BY id LIMIT 30"
-  )
+  const rs = await env.DB.prepare("SELECT id,ts,src,msg,path FROM errlog WHERE id>?1 ORDER BY id LIMIT 30")
     .bind(cursor)
     .all();
   const rows = (rs.results || []) as { id: number; ts: string; src: string; msg: string; path: string }[];
@@ -175,7 +173,11 @@ async function runJob(env: Env, name: string, fn: () => Promise<string>): Promis
       await putSetting(
         env,
         "cron_last_" + name,
-        JSON.stringify({ ts: ts, ok: false, err: String((e as { message?: unknown })?.message || e).slice(0, 300) })
+        JSON.stringify({
+          ts: ts,
+          ok: false,
+          err: String((e as { message?: unknown })?.message || e).slice(0, 300)
+        })
       );
     } catch (e2) {
       /* settings 也壞了就只剩 errlog */

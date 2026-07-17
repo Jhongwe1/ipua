@@ -27,7 +27,9 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
   if (c.err !== undefined) return json({ error: "bad-input", hint: c.err }, 400);
 
   try {
-    const old = await env.DB.prepare("SELECT * FROM vpn_channels WHERE id=?1").bind(id).first<{ url: string }>();
+    const old = await env.DB.prepare("SELECT * FROM vpn_channels WHERE id=?1")
+      .bind(id)
+      .first<{ url: string }>();
     if (!old) return json({ error: "not-found" }, 404);
     const u = c.ch.url === undefined ? old.url : c.ch.url;
     if (c.ch.kind === "sub" && !u) return json({ error: "bad-input", hint: "sub 渠道要填上游訂閱網址" }, 400);
@@ -59,7 +61,9 @@ export async function onRequestDelete(context: RouteCtx): Promise<Response> {
   const id = idOf(params);
   if (!id || !env.DB) return json({ error: "bad-id" }, 400);
   try {
-    const old = await env.DB.prepare("SELECT name FROM vpn_channels WHERE id=?1").bind(id).first<{ name: string }>();
+    const old = await env.DB.prepare("SELECT name FROM vpn_channels WHERE id=?1")
+      .bind(id)
+      .first<{ name: string }>();
     await env.DB.prepare("DELETE FROM vpn_channels WHERE id=?1").bind(id).run();
     audit(
       env,

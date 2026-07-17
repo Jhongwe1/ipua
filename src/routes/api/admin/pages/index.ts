@@ -17,7 +17,7 @@ export interface PageInput {
 export type CleanPageResult = { page: PageInput; err?: undefined } | { err: string; page?: undefined };
 
 // 欄位整理與上限（slug、title 必填；status 只收白名單值）。不合規回錯誤字串。
- 
+
 export function cleanPage(b: any): CleanPageResult {
   if (!b || typeof b !== "object") return { err: "需要 JSON 本體" };
   const slug = String(b.slug == null ? "" : b.slug)

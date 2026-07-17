@@ -23,7 +23,15 @@ import type { RouteCtx } from "../../../types.js";
 
 const QUOTA_KEYS = ["quota_relay_day", "quota_pg_day", "rl_per_min"];
 const DEMO_NUM_KEYS = ["demo_per_min", "demo_per_ip_day", "demo_global_day", "demo_max_tokens"];
-const ALL_KEYS = ["brand", "contact_url", "pg_open", "relay_meter", "demo_mode", "demo_channel", "demo_models"]
+const ALL_KEYS = [
+  "brand",
+  "contact_url",
+  "pg_open",
+  "relay_meter",
+  "demo_mode",
+  "demo_channel",
+  "demo_models"
+]
   .concat(QUOTA_KEYS)
   .concat(DEMO_NUM_KEYS);
 
@@ -93,7 +101,11 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
         return json(
           {
             error: "bad-input",
-            hint: k + " 要是正整數，或 null＝回到內建預設（" + (QUOTA_DEFAULTS as Record<string, number>)[k] + "）"
+            hint:
+              k +
+              " 要是正整數，或 null＝回到內建預設（" +
+              (QUOTA_DEFAULTS as Record<string, number>)[k] +
+              "）"
           },
           400
         );
@@ -137,7 +149,8 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
         return json(
           {
             error: "bad-input",
-            hint: k + " 要是正整數，或 null＝回到內建預設（" + (DEMO_DEFAULTS as Record<string, number>)[k] + "）"
+            hint:
+              k + " 要是正整數，或 null＝回到內建預設（" + (DEMO_DEFAULTS as Record<string, number>)[k] + "）"
           },
           400
         );

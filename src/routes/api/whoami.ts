@@ -6,7 +6,7 @@ import type { RouteCtx } from "../../types.js";
 export function onRequestGet({ request }: RouteCtx): Response {
   const h = request.headers;
   // cf 欄位依方案／環境可有可無，逐欄防禦式取值
-   
+
   const cf = (request.cf || {}) as any;
   const num = (v: any): number | null => {
     const n = parseFloat(v);

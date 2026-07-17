@@ -35,7 +35,7 @@ function shouldLog(request: Request, url: URL): boolean {
 async function logVisit(request: Request, env: Env, url: URL): Promise<void> {
   const h = request.headers;
   // cf 欄位依方案／環境可有可無，逐欄防禦式取值
-   
+
   const cf = (request.cf || {}) as any;
   await env.DB.prepare(
     `INSERT INTO visits (ts, host, path, method, ip, ua, country, city, region, colo, asn, isp, lang, referer, http, tls)

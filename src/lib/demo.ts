@@ -36,7 +36,15 @@ function intOr(v: unknown, dft: number): number {
 
 /** 讀 demo 設定（settings 表 demo_* 鍵；任何失敗＝視為關閉）。 */
 export async function demoCfg(env: Env): Promise<DemoCfg> {
-  const off: DemoCfg = { on: false, channel: "", models: [], perMin: 0, perIpDay: 0, globalDay: 0, maxTokens: 0 };
+  const off: DemoCfg = {
+    on: false,
+    channel: "",
+    models: [],
+    perMin: 0,
+    perIpDay: 0,
+    globalDay: 0,
+    maxTokens: 0
+  };
   try {
     if (!env || !env.DB) return off;
     const rs = await env.DB.prepare(
@@ -69,8 +77,7 @@ export async function demoCfg(env: Env): Promise<DemoCfg> {
  * OAuth 的 sub 是數字、dev 登入是 dev:<email>，都撞不到 'demo:public'；status 也保持 pending。
  */
 export async function demoUser(env: Env): Promise<UserRow> {
-  const sel = () =>
-    env.DB.prepare("SELECT * FROM users WHERE google_sub='demo:public'").first<UserRow>();
+  const sel = () => env.DB.prepare("SELECT * FROM users WHERE google_sub='demo:public'").first<UserRow>();
   let u = await sel();
   if (u) return u;
   await env.DB.prepare(

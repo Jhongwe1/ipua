@@ -95,7 +95,9 @@ export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 export function esc(s: unknown): string {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c];
+    return (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>
+    )[c];
   });
 }
 

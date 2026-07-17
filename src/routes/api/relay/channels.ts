@@ -13,11 +13,11 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
     const res = await env.DB.prepare(
       "SELECT slug,name,kind,models FROM relay_channels WHERE enabled=1 ORDER BY id"
     ).all();
-    const rows = ((res.results || []) as { slug: string; name: string; kind: string; models?: unknown }[]).map(
-      function (r) {
-        return { slug: r.slug, name: r.name, kind: r.kind, models: modelList(r) };
-      }
-    );
+    const rows = (
+      (res.results || []) as { slug: string; name: string; kind: string; models?: unknown }[]
+    ).map(function (r) {
+      return { slug: r.slug, name: r.name, kind: r.kind, models: modelList(r) };
+    });
     return json({ rows: rows, approved: hasService(user, env, "relay") });
   } catch (e: any) {
     return json({ error: "query-failed", detail: String((e && e.message) || e) }, 500);

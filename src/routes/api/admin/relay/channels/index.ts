@@ -63,11 +63,10 @@ export interface RelayChannelInput {
   api_key?: string;
 }
 export type CleanRelayChannelResult =
-  | { ch: RelayChannelInput; err?: undefined }
-  | { err: string; ch?: undefined };
+  { ch: RelayChannelInput; err?: undefined } | { err: string; ch?: undefined };
 
 // 欄位整理：回 { ch } 或 { err }。models 必填（新增渠道時就要先把模型名稱設定好）。
- 
+
 export function cleanChannel(b: any): CleanRelayChannelResult {
   if (!b || typeof b !== "object") return { err: "需要 JSON 本體" };
   const slugRaw = String(b.slug == null ? "" : b.slug)
@@ -105,7 +104,6 @@ export function cleanChannel(b: any): CleanRelayChannelResult {
   return { ch: ch };
 }
 
- 
 export function maskRow(r: any) {
   return {
     id: r.id,

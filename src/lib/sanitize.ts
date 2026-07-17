@@ -91,7 +91,9 @@ const DROP_VOID: Record<string, number> = { embed: 1 };
 
 function esc(s: unknown): string {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c];
+    return (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>
+    )[c];
   });
 }
 

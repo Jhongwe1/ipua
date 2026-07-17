@@ -213,7 +213,11 @@ paths:
         - { name: html, in: query, schema: { type: string, enum: ["1"] } }
       responses:
         "200": { description: "{ article }" }
-        "404": { description: 不存在或未發佈, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404":
+          {
+            description: 不存在或未發佈,
+            content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+          }
   /api/pages:
     get:
       tags: [內容]
@@ -265,7 +269,11 @@ paths:
       responses:
         "200": { description: SSE（text/event-stream） }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "429": { description: 配額或限流, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429":
+          {
+            description: 配額或限流,
+            content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+          }
   /api/playground/conversations:
     get:
       tags: [Playground]
@@ -418,7 +426,8 @@ paths:
       security: [{ adminToken: [] }, { sessionCookie: [] }]
       parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90 } }]
       responses:
-        "200": { description: "{ days, since, by_day, by_channel, by_user, durs, cost_total, unpriced_models }" }
+        "200":
+          { description: "{ days, since, by_day, by_channel, by_user, durs, cost_total, unpriced_models }" }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/admin/prices:
     get:
@@ -678,7 +687,16 @@ paths:
       summary: API 中轉轉發（/relay/{渠道slug}/{上游路徑}；帶 uak- 會員金鑰；接受所有方法）
       description: 伺服器把驗證換成管理員存的上游金鑰後轉發；串流照走；計量只掃回應尾端。
       security: [{ memberKey: [] }]
-      parameters: [{ name: path, in: path, required: true, schema: { type: string }, description: 渠道 slug＋上游路徑（catch-all） }]
+      parameters:
+        [
+          {
+            name: path,
+            in: path,
+            required: true,
+            schema: { type: string },
+            description: 渠道 slug＋上游路徑（catch-all）
+          }
+        ]
       responses:
         "200": { description: 上游回應（原樣轉發） }
         "401": { $ref: "#/components/responses/Unauthorized" }

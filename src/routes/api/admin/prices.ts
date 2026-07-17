@@ -36,7 +36,8 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
   } catch (e) {}
   const items = body && Array.isArray(body.items) ? body.items : null;
   if (!items) return json({ error: "bad-input", hint: "需要 items 陣列（空陣列＝清空定價表）" }, 400);
-  if (items.length > MAX_ITEMS) return json({ error: "too-many", hint: "定價最多 " + MAX_ITEMS + " 列" }, 400);
+  if (items.length > MAX_ITEMS)
+    return json({ error: "too-many", hint: "定價最多 " + MAX_ITEMS + " 列" }, 400);
 
   const seen: Record<string, boolean> = {};
   const clean: { pattern: string; input: number; output: number; note: string }[] = [];
@@ -52,7 +53,10 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
     const output = Number(it.output_usd_per_m);
     if (!Number.isFinite(input) || input < 0 || !Number.isFinite(output) || output < 0) {
       return json(
-        { error: "bad-input", hint: "「" + pattern + "」的 input/output_usd_per_m 要是 ≥0 的數字（每百萬 tokens 美元）" },
+        {
+          error: "bad-input",
+          hint: "「" + pattern + "」的 input/output_usd_per_m 要是 ≥0 的數字（每百萬 tokens 美元）"
+        },
         400
       );
     }

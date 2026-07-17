@@ -17,7 +17,7 @@ export interface ArticleInput {
 }
 
 // 表單欄位整理與上限（title 必填；category / status 只收白名單值）
- 
+
 export function cleanArticle(b: any): ArticleInput | null {
   if (!b || typeof b !== "object") return null;
   const title = String(b.title == null ? "" : b.title)

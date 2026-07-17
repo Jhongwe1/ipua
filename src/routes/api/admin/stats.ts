@@ -69,7 +69,16 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
     // by_user：user×model 細分列 → 每人一列（cost 加得起來的部分加總；有任何未定價模型就標 unpriced）
     const perUser: Record<
       string,
-      { user_id: number; email: string; name: string; n: number; tokens_in: number; tokens_out: number; cost: number | null; unpriced: boolean }
+      {
+        user_id: number;
+        email: string;
+        name: string;
+        n: number;
+        tokens_in: number;
+        tokens_out: number;
+        cost: number | null;
+        unpriced: boolean;
+      }
     > = {};
     for (const r of (res[3].results || []) as Row[]) {
       const uid = Number(r.user_id);

@@ -19,11 +19,10 @@ export interface VpnChannelInput {
   url?: string;
 }
 export type CleanVpnChannelResult =
-  | { ch: VpnChannelInput; err?: undefined }
-  | { err: string; ch?: undefined };
+  { ch: VpnChannelInput; err?: undefined } | { err: string; ch?: undefined };
 
 // 欄位整理：回 { ch } 或 { err }。
- 
+
 export function cleanChannel(b: any): CleanVpnChannelResult {
   if (!b || typeof b !== "object") return { err: "需要 JSON 本體" };
   const name = String(b.name == null ? "" : b.name)
@@ -49,7 +48,6 @@ export function cleanChannel(b: any): CleanVpnChannelResult {
   return { ch: ch };
 }
 
- 
 export function maskRow(r: any) {
   return {
     id: r.id,

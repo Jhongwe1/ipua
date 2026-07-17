@@ -13,7 +13,11 @@ const E = () => envWith({ LOGS_TOKEN: TOK });
 const putCtx = (body: unknown) =>
   makeCtx({
     url: ORIGIN + "/api/admin/prices",
-    init: { method: "PUT", headers: Object.assign({ "content-type": "application/json" }, AUTH), body: JSON.stringify(body) },
+    init: {
+      method: "PUT",
+      headers: Object.assign({ "content-type": "application/json" }, AUTH),
+      body: JSON.stringify(body)
+    },
     env: E()
   });
 
@@ -43,7 +47,9 @@ describe("/api/admin/prices", () => {
     const r = await pricesPut(ctx);
     expect(r.status).toBe(200);
     await drainWaits(ctx);
-    const g: any = await (await pricesGet(makeCtx({ url: ORIGIN + "/api/admin/prices", init: { headers: AUTH }, env: E() }))).json();
+    const g: any = await (
+      await pricesGet(makeCtx({ url: ORIGIN + "/api/admin/prices", init: { headers: AUTH }, env: E() }))
+    ).json();
     expect(g.items.length).toBe(2);
     expect(g.items[0].pattern).toBe("claude-sonnet-5"); // 依 pattern 排序
     expect(g.items[1].input_usd_per_m).toBe(2.5);
@@ -52,7 +58,9 @@ describe("/api/admin/prices", () => {
 
     const r2 = await pricesPut(putCtx({ items: [] }));
     expect(((await r2.json()) as any).count).toBe(0);
-    const g2: any = await (await pricesGet(makeCtx({ url: ORIGIN + "/api/admin/prices", init: { headers: AUTH }, env: E() }))).json();
+    const g2: any = await (
+      await pricesGet(makeCtx({ url: ORIGIN + "/api/admin/prices", init: { headers: AUTH }, env: E() }))
+    ).json();
     expect(g2.items.length).toBe(0);
   });
 
@@ -61,11 +69,19 @@ describe("/api/admin/prices", () => {
     expect(
       (
         await pricesPut(
-          putCtx({ items: [{ pattern: "a", input_usd_per_m: 1, output_usd_per_m: 1 }, { pattern: "a", input_usd_per_m: 2, output_usd_per_m: 2 }] })
+          putCtx({
+            items: [
+              { pattern: "a", input_usd_per_m: 1, output_usd_per_m: 1 },
+              { pattern: "a", input_usd_per_m: 2, output_usd_per_m: 2 }
+            ]
+          })
         )
       ).status
     ).toBe(400);
-    expect((await pricesPut(putCtx({ items: [{ pattern: "a", input_usd_per_m: -1, output_usd_per_m: 0 }] }))).status).toBe(400);
+    expect(
+      (await pricesPut(putCtx({ items: [{ pattern: "a", input_usd_per_m: -1, output_usd_per_m: 0 }] })))
+        .status
+    ).toBe(400);
   });
 });
 

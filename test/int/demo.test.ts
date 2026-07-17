@@ -121,7 +121,11 @@ describe("demo 模式", () => {
     await seedChannel({ slug: "demo", kind: "openai", base_url: UP, models: "demo-model" });
     await demoOn("demo");
     const r = await chatPost(
-      anonChat({ channel: "demo", model: "demo-model", messages: [{ role: "user", content: "喂".repeat(4001) }] })
+      anonChat({
+        channel: "demo",
+        model: "demo-model",
+        messages: [{ role: "user", content: "喂".repeat(4001) }]
+      })
     );
     expect(r.status).toBe(400);
     expect(((await r.json()) as any).error).toBe("demo-too-long");

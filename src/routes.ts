@@ -67,10 +67,7 @@ import { onRequestPost as acctLogoutAll } from "./routes/api/account/logout-all.
 
 // —— 管理員 API ——
 import { onRequestGet as admApidoc } from "./routes/api/admin/apidoc.js";
-import {
-  onRequestGet as admErrorsGet,
-  onRequestDelete as admErrorsDel
-} from "./routes/api/admin/errors.js";
+import { onRequestGet as admErrorsGet, onRequestDelete as admErrorsDel } from "./routes/api/admin/errors.js";
 import { onRequestPost as admMedia } from "./routes/api/admin/media.js";
 import { onRequestPut as admMenu } from "./routes/api/admin/menu.js";
 import { onRequestPut as admSettings } from "./routes/api/admin/settings.js";
@@ -95,10 +92,7 @@ import {
   onRequestDelete as admPageDel
 } from "./routes/api/admin/pages/[key].js";
 import { onRequestGet as admUsersList } from "./routes/api/admin/users/index.js";
-import {
-  onRequestPut as admUserPut,
-  onRequestDelete as admUserDel
-} from "./routes/api/admin/users/[id].js";
+import { onRequestPut as admUserPut, onRequestDelete as admUserDel } from "./routes/api/admin/users/[id].js";
 import {
   onRequestGet as admRelayChList,
   onRequestPost as admRelayChCreate

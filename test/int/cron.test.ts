@@ -29,7 +29,13 @@ async function getSetting(k: string): Promise<string | null> {
   const r = await env.DB.prepare("SELECT v FROM settings WHERE k=?1").bind(k).first<{ v: string }>();
   return r ? String(r.v) : null;
 }
-async function seedReq(ts: string, user_id: number, svc: string, status: number, tin: number | null): Promise<void> {
+async function seedReq(
+  ts: string,
+  user_id: number,
+  svc: string,
+  status: number,
+  tin: number | null
+): Promise<void> {
   await env.DB.prepare(
     "INSERT INTO req_log (ts,user_id,svc,channel,model,status,dur_ms,tokens_in,tokens_out) " +
       "VALUES (?1,?2,?3,'ch','m1',?4,100,?5,?5)"
@@ -113,7 +119,9 @@ describe("backupToR2", () => {
     )
       .bind(new Date().toISOString())
       .run();
-    await env.DB.prepare("INSERT INTO media (mime,bytes,w,h,data,created_at) VALUES ('image/webp',3,1,1,?1,?2)")
+    await env.DB.prepare(
+      "INSERT INTO media (mime,bytes,w,h,data,created_at) VALUES ('image/webp',3,1,1,?1,?2)"
+    )
       .bind(new Uint8Array([1, 2, 3]), new Date().toISOString())
       .run();
     // 佈 15 份舊備份 → 今天這份寫完應只剩 14 份
@@ -126,7 +134,10 @@ describe("backupToR2", () => {
     expect(note).toContain("backup/2026-01-03.jsonl");
     const obj = await env.BACKUPS!.get("backup/2026-01-03.jsonl");
     expect(obj).not.toBeNull();
-    const lines = (await obj!.text()).trim().split("\n").map((l) => JSON.parse(l));
+    const lines = (await obj!.text())
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     const art = lines.find((x) => x.t === "articles");
     expect(art.r.title).toBe("備份標題");
     const usr = lines.find((x) => x.t === "users" && x.r.id === u.id);
@@ -164,10 +175,14 @@ describe("purgeOld", () => {
     )
       .bind(u.id, old(400))
       .run();
-    await env.DB.prepare("INSERT INTO pg_messages (conv_id,role,content,created_at) VALUES (1,'user','舊',?1)")
+    await env.DB.prepare(
+      "INSERT INTO pg_messages (conv_id,role,content,created_at) VALUES (1,'user','舊',?1)"
+    )
       .bind(old(361))
       .run();
-    await env.DB.prepare("INSERT INTO pg_messages (conv_id,role,content,created_at) VALUES (1,'user','新',?1)")
+    await env.DB.prepare(
+      "INSERT INTO pg_messages (conv_id,role,content,created_at) VALUES (1,'user','新',?1)"
+    )
       .bind(old(300))
       .run();
     const note = await purgeOld(env, now);

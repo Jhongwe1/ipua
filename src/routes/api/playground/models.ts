@@ -16,7 +16,9 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
       const cfg = await demoCfg(env);
       if (cfg.on) {
         try {
-          const ch = await env.DB.prepare("SELECT slug,models FROM relay_channels WHERE slug=?1 AND enabled=1")
+          const ch = await env.DB.prepare(
+            "SELECT slug,models FROM relay_channels WHERE slug=?1 AND enabled=1"
+          )
             .bind(cfg.channel)
             .first<ChannelRow>();
           let models = ch ? chModels(ch) : [];

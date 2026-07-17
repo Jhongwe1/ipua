@@ -44,5 +44,7 @@ export function costUSD(
   if (tokens_in == null && tokens_out == null) return null;
   const tin = Number(tokens_in) || 0;
   const tout = Number(tokens_out) || 0;
-  return (tin / 1e6) * (Number(price.input_usd_per_m) || 0) + (tout / 1e6) * (Number(price.output_usd_per_m) || 0);
+  return (
+    (tin / 1e6) * (Number(price.input_usd_per_m) || 0) + (tout / 1e6) * (Number(price.output_usd_per_m) || 0)
+  );
 }
