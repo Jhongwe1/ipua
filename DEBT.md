@@ -11,7 +11,7 @@
 | 5 | ~~**無 eslint／prettier**~~ ✅ v2.0.0 Phase E 還清：ESLint flat config＋typescript-eslint＋Prettier＋CI lint job | tsc（@ts-check 新模組）＋測試已擋住大半；風格靠人肉一致 | ~~出現第二位貢獻者~~ |
 | 6 | ~~**req_log 不做 usage_daily 聚合表**~~ ✅ v2.0.0 Phase I 還清：migration 0003＋每日 cron 結算（冪等），長期報告數據源 | 流量小，COUNT 走 (user_id,svc,ts) 索引足夠 | ~~req_log 破 50 萬列或 /logs 用量分頁明顯變慢~~ |
 | 7 | **custom 渠道不加 stream_options.include_usage** | 自架/本地服務可能拒收未知欄位 | OpenAI 相容自架服務普遍支援後，改成 per-channel 開關 |
-| 8 | **舊 LOGS_TOKEN 仍在 git 歷史** | 私有 repo＋發佈時已輪替新值，風險受控 | **repo 公開前必須 `git filter-repo` 洗歷史**（硬性門檻） |
+| 8 | ~~**舊 LOGS_TOKEN 仍在 git 歷史**~~ ✅ v2.0.0 Phase O 還清：2026-07-17 線上輪替新金鑰（舊值驗證 401）＋`git filter-repo --replace-text` 洗除全歷史（60 commit 數目不變、main 檔案樹雜湊不變、mirror 離線備份留存）；**此後永不再改寫歷史** | 私有 repo＋發佈時已輪替新值，風險受控 | ~~repo 公開前必須 `git filter-repo` 洗歷史~~ |
 | 9 | **CSP style-src 保留 'unsafe-inline'** | 全站大量 inline style，改造工程大、收益小（ADR-0004） | 若要拿 CSP 滿分（如安全掃描需求）：抽出共用 <style> 或加 style nonce |
 | 10 | ~~**配額算「次數」不算「錢」**~~ ✅ v2.0.0 Phase J 半清：model_prices 定價表＋stats／/logs 估算成本（回溯計價，報告用）；**配額執法仍算次數（維持拍板，不算還債缺口）** | 各家計價表是維護負擔；token 數已入庫，之後可回溯計價 | ~~單月上游帳單失控，或想出成本報告時~~ |
 | 11 | ~~**D1 無自動備份**~~ ✅ v2.0.0 Phase I 還清：每日 cron 全庫 JSONL 進 R2（BLOB 排除、保留 14 份）；手動 export 指令仍在 ADMIN.md 當第二保險 | 個人站接受手動 `wrangler d1 export`（ADMIN.md 有指令） | ~~內容量大到「重寫一遍會心痛」：加 GitHub Actions 定期 export~~ |

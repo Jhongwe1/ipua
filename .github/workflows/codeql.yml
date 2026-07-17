@@ -1,0 +1,24 @@
+# CodeQL 靜態安全掃描（v2.0.0 Phase O：repo 公開後免費）。
+# 掃 TypeScript／JavaScript（含 tools/ 與前端資產）；排程每週一掃一次補漏。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "26 3 * * 1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
