@@ -16,3 +16,5 @@
 | 10 | ~~**配額算「次數」不算「錢」**~~ ✅ v2.0.0 Phase J 半清：model_prices 定價表＋stats／/logs 估算成本（回溯計價，報告用）；**配額執法仍算次數（維持拍板，不算還債缺口）** | 各家計價表是維護負擔；token 數已入庫，之後可回溯計價 | ~~單月上游帳單失控，或想出成本報告時~~ |
 | 11 | ~~**D1 無自動備份**~~ ✅ v2.0.0 Phase I 還清：每日 cron 全庫 JSONL 進 R2（BLOB 排除、保留 14 份）；手動 export 指令仍在 ADMIN.md 當第二保險 | 個人站接受手動 `wrangler d1 export`（ADMIN.md 有指令） | ~~內容量大到「重寫一遍會心痛」：加 GitHub Actions 定期 export~~ |
 | 12 | **vitest-pool-workers 鎖 wrangler ~4.44** | pool-workers 0.9 的相容組合（Phase A 實測 4.110 撞版） | pool-workers 出新版支援新 wrangler 時一起升 |
+| 13 | **串流貼著免費方案 10ms CPU 上限跑**（ADR-0011） | 站長拍板續用免費方案；兩層優化後 5982 增量約 4.2ms，尚有餘裕 | 出現新的無聲截斷（`wrangler tail` 看到 `Exceeded CPU Limit`）、或換上更囉唆的上游格式 → 升 Workers Paid（$5/月、30 秒 CPU），那是真正的解 |
+| 14 | **fastsse 快速路徑寫死 OpenAI 相容欄位名**（ADR-0011） | 實際流量 openai 69／gemini 17；anthropic 目前無渠道，走完整解析也不痛 | 新增第四種渠道 kind 時：要嘛補一條快速路徑，要嘛加進 `slowKind` 名單 |
