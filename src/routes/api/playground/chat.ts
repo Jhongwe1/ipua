@@ -7,9 +7,11 @@
 //
 // 回給瀏覽器的 SSE 事件（每筆都是 data: JSON）：
 //   { conv, title? }   一開始先告訴前端對話編號（新對話附自動取的標題）
+//   { r: "文字" }      推理模型的思考增量（前端畫成可摺疊區塊；不存進 D1）
 //   { d: "文字" }      增量內容
-//   { error, hint }    中途出錯（已生成的部分照存）
+//   { error, hint }    中途出錯（已生成的部分照存）；整趟沒有正文＝error:"empty-output"
 //   { done: true }     結束
+// r 與 d 都是「批次合併後」才送 — 逐筆轉推會燒穿免費方案 10ms CPU 上限（見下方 push/flush）。
 // 上游一開始就失敗時不進 SSE，直接回 JSON 錯誤（body 會帶 conv，前端才不會重複開對話）。
 import { json } from "../../../lib/site.js";
 import { isAdminUser, getSessionUser, goodOrigin } from "../../../lib/auth.js";
@@ -374,10 +376,15 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
         const hint = sawReasoning
           ? "模型只輸出了思考過程，沒有給出正式回覆 — 請再問一次，或換一個模型"
           : "上游沒有回覆內容，請再試一次";
-        await reportErrorNow(env, "pg.empty", sawReasoning ? "只有思考內容、沒有正式回覆" : "上游沒有回覆內容", {
-          user_id: user.id,
-          path: "/playground/" + v.channel
-        });
+        await reportErrorNow(
+          env,
+          "pg.empty",
+          sawReasoning ? "只有思考內容、沒有正式回覆" : "上游沒有回覆內容",
+          {
+            user_id: user.id,
+            path: "/playground/" + v.channel
+          }
+        );
         await send({ error: "empty-output", hint: hint });
       }
       await send({ done: true });

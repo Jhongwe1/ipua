@@ -138,9 +138,7 @@ describe("playground chat", () => {
     expect(events[events.length - 1].done).toBe(true);
 
     // 存進 D1 的只有正式回覆 — 思考過程一個字都不落地
-    const msgs = await env.DB.prepare(
-      "SELECT role,content FROM pg_messages WHERE conv_id=?1 ORDER BY id"
-    )
+    const msgs = await env.DB.prepare("SELECT role,content FROM pg_messages WHERE conv_id=?1 ORDER BY id")
       .bind(events[0].conv)
       .all();
     expect(msgs.results[1].content).toBe("9.9 比較大");
