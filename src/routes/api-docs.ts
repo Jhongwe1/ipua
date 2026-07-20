@@ -1,13 +1,11 @@
 // GET /api-docs — API 文件頁（v2.0.0 Phase L 起**公開**，noindex 保留；ADR-0010）。
 // v1 是金鑰閘門＋瀏覽器端渲染；拍板公開後改成：
-//   1) 「使用說明」＝ API.md（src/lib/apidoc.ts，唯一原稿）伺服器端 marked 渲染＋白名單消毒
+//   1) 「使用說明」＝ API.md（唯一原稿）→ 建置期就渲染＋消毒成 APIDOC_HTML，這裡直接吐
 //   2) 「互動式參考」＝ vendored Scalar（public/assets/vendor/scalar.js，CSP 'self'）讀 /openapi.json
 // Scalar 3.6MB 走懶載入 — 點了分頁才插 <script>，看說明的人不用付這個流量。
 import { html, pageShell, esc } from "../lib/site.js";
 import { getChromeFor } from "../lib/chrome.js";
-import { marked } from "../lib/vendor/marked.mjs";
-import { sanitizeHtml } from "../lib/sanitize.js";
-import { APIDOC } from "../lib/apidoc.js";
+import { APIDOC_HTML } from "../lib/apidoc.js";
 import type { RouteCtx } from "../types.js";
 
 const DOC_CSS = `
@@ -46,8 +44,8 @@ const DOC_JS = `
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）
-  // API.md → HTML：跟文章／自訂頁同一條消毒管線（marked 放行原始 HTML，一律過白名單）
-  const docHtml = sanitizeHtml(marked.parse(APIDOC, { gfm: true, breaks: false, async: false }) as string);
+  // 渲染與消毒都在建置期做完了（tools/build-apidoc.mjs）— 這裡零運算，免費方案的 10ms CPU 省著用
+  const docHtml = APIDOC_HTML;
   const body =
     "<style>" +
     DOC_CSS +

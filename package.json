@@ -13,7 +13,7 @@
     "seed": "node tools/seed-local.mjs",
     "seed:e2e": "node tools/seed-e2e.mjs",
     "e2e": "playwright test",
-    "apidoc": "node tools/build-apidoc.mjs",
+    "apidoc": "node --experimental-strip-types tools/build-apidoc.mjs",
     "openapi": "node tools/build-openapi.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
