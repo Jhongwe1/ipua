@@ -299,19 +299,106 @@
     });
   }
 
+  /* ===== 分頁 4：總對話紀錄（/api/admin/conversations） =====
+     全站會員在 Playground 存下的對話，新→舊；點一列才去抓那則對話的全部訊息。 */
+  var convOffset = 0, convLoading = false, convLoaded = false;
+
+  // 「會員」欄：有姓名就上面一行姓名，信箱固定灰字（.who-mail）
+  function convWhoCell(r){
+    var td = el("td");
+    var name = String(r.name || "").trim();
+    if(name) td.appendChild(el("div", "ua-name", name));
+    var mail = String(r.email || "").trim();
+    td.appendChild(el("div", "who-mail mono", mail || "（帳號已刪除 · 會員 #" + r.user_id + "）"));
+    return td;
+  }
+
+  // 展開列：整串對話（舊→新，照聊天的閱讀順序）
+  function fillThread(td, d){
+    td.innerHTML = "";
+    var msgs = d.messages || [];
+    if(!msgs.length){ td.appendChild(el("div", "hint", "這則對話沒有訊息。")); return; }
+    var box = el("div", "conv-thread");
+    msgs.forEach(function(m){
+      var mine = m.role === "user";
+      var b = el("div", "cmsg " + (mine ? "user" : "asst"));
+      var role = mine ? "會員" : (m.role === "assistant" ? "AI" : String(m.role || ""));
+      b.appendChild(el("div", "crole", role + (m.model ? " · " + m.model : "") + " · " + fmtTime(m.created_at)));
+      b.appendChild(el("div", "ctext", m.content || ""));
+      box.appendChild(b);
+    });
+    td.appendChild(box);
+  }
+
+  function renderConvRow(r){
+    var tr = el("tr", "main");
+    var tdT = el("td", "nowrap mono", fmtTime(r.updated_at)); tdT.title = r.updated_at;
+    tr.appendChild(tdT);
+    tr.appendChild(convWhoCell(r));
+    var tdC = el("td");
+    tdC.appendChild(el("div", "conv-title", r.title || "（未命名對話）"));
+    tdC.appendChild(el("div", "who-mail mono", "#" + r.id));
+    tr.appendChild(tdC);
+    tr.appendChild(el("td", "mono", [r.channel || "", r.model || ""].filter(Boolean).join(" / ") || "—"));
+    tr.appendChild(el("td", null, (r.msgs != null) ? String(r.msgs) : "—"));
+
+    var detail = null;
+    tr.addEventListener("click", function(){
+      if(detail){ detail.remove(); detail = null; return; }
+      detail = el("tr", "detail");
+      var td = document.createElement("td"); td.colSpan = 5;
+      td.appendChild(el("div", "hint", "載入中…"));
+      detail.appendChild(td);
+      tr.parentNode.insertBefore(detail, tr.nextSibling);
+      adminApi("/api/admin/conversations/" + r.id).then(function(d){
+        fillThread(td, d);
+      }).catch(function(err){
+        td.innerHTML = "";
+        if(err && err.auth){ showGate(!!token); return; }
+        td.appendChild(el("div", "hint", "讀取失敗，請稍後再試。"));
+      });
+    });
+    return tr;
+  }
+
+  function loadConvs(reset){
+    if(convLoading) return;
+    convLoading = true;
+    if(reset) convOffset = 0;
+    adminApi("/api/admin/conversations?limit=" + LIMIT + "&offset=" + convOffset).then(function(d){
+      if(reset) $("convBody").innerHTML = "";
+      (d.rows || []).forEach(function(r){ $("convBody").appendChild(renderConvRow(r)); });
+      convOffset += (d.rows || []).length;
+      $("convEmpty").classList.toggle("hidden", $("convBody").children.length > 0);
+      $("convMoreBtn").classList.toggle("hidden", convOffset >= d.total || (d.rows || []).length < LIMIT);
+      convLoading = false; convLoaded = true;
+    }).catch(function(err){
+      convLoading = false;
+      if(err && err.auth){ showGate(!!token); return; }
+      $("convEmpty").textContent = "讀取失敗，請稍後再試。";
+      $("convEmpty").classList.remove("hidden");
+    });
+  }
+
   /* ===== 分頁切換 ===== */
   function switchTab(name){
-    [["Visits", "tabVisits", "paneVisits"], ["Errors", "tabErrors", "paneErrors"], ["Stats", "tabStats", "paneStats"]].forEach(function(t){
+    [["Visits", "tabVisits", "paneVisits"], ["Errors", "tabErrors", "paneErrors"],
+     ["Stats", "tabStats", "paneStats"], ["Convs", "tabConvs", "paneConvs"]].forEach(function(t){
       var on = t[0] === name;
       $(t[1]).classList.toggle("on", on);
       $(t[2]).classList.toggle("hidden", !on);
     });
     if(name === "Errors" && !errLoaded) loadErrors(true);
     if(name === "Stats" && !statLoaded) loadStats();
+    if(name === "Convs" && !convLoaded) loadConvs(true);
   }
   $("tabVisits").addEventListener("click", function(){ switchTab("Visits"); });
   $("tabErrors").addEventListener("click", function(){ switchTab("Errors"); });
   $("tabStats").addEventListener("click", function(){ switchTab("Stats"); });
+  $("tabConvs").addEventListener("click", function(){ switchTab("Convs"); });
+
+  $("convRefreshBtn").addEventListener("click", function(){ loadConvs(true); });
+  $("convMoreBtn").addEventListener("click", function(){ loadConvs(false); });
 
   $("errRefreshBtn").addEventListener("click", function(){ loadErrors(true); });
   $("errMoreBtn").addEventListener("click", function(){ loadErrors(false); });

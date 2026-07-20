@@ -107,6 +107,8 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 | `GET /api/admin/errors` | 站內錯誤日誌（`?limit&offset&src`；relay/playground/OAuth/CSP 埋點） |
 | `DELETE /api/admin/errors` | 清空錯誤日誌 |
 | `GET /api/admin/stats` | 用量統計（`?days=7`；每日×服務、渠道×模型、每人彙總、原始耗時值供算 p95、估算成本）— /logs 用量分頁的數據源 |
+| `GET /api/admin/conversations` | 全站 Playground 對話總表（`?limit&offset&q&user_id`；新→舊，帶會員信箱）— /logs 總對話紀錄分頁的數據源 |
+| `GET /api/admin/conversations/{id}` | 讀任一會員的單則對話（含全部訊息） |
 | `GET /api/admin/prices` | 模型定價表（成本記帳用） |
 | `PUT /api/admin/prices` | 覆蓋模型定價表（**整包覆蓋**；pattern 尾端 `*`＝前綴匹配） |
 | `GET /api/admin/apidoc` | 這份文件的 Markdown 原稿（`{ md }`） |
@@ -326,6 +328,26 @@ curl -X PUT https://uaip.cc.cd/api/admin/prices ^
 
 回 `{ rows, total, today?, todayIps? }`。
 
+### 總對話紀錄：/api/admin/conversations
+
+管理視角看**全站會員**在 Playground 存下的對話（2026-07-20 上線）——會員版 `/api/playground/conversations` 只看得到自己的，這兩支不限擁有者。網頁在 **/logs 的「總對話紀錄」分頁**。
+
+`GET /api/admin/conversations`
+
+| 參數 | 說明 |
+|---|---|
+| `limit` | 1–200，預設 50 |
+| `offset` | 分頁位移 |
+| `q` | 模糊搜尋（標題／會員信箱／姓名／模型／渠道；**不搜訊息內容**）。網頁上沒有這個欄位，只給 curl／agent 用 |
+| `user_id` | 只看某個會員的對話 |
+
+回 `{ rows, total }`，`rows` 依 `updated_at` **新→舊**；每列：`id`、`user_id`、`email`、`name`（對話是誰的）、`title`、`channel`、`model`、`msgs`（訊息則數）、`created_at`、`updated_at`。帳號已刪除時 `email`／`name` 是 `null`。
+
+`GET /api/admin/conversations/{id}` → `{ conv, messages }`：`conv` 是那列（額外帶 `email`、`name`），`messages` 依時間**舊→新**（聊天的閱讀順序）、上限 500 則，每則 `id`、`role`、`content`、`model`、`created_at`。找不到回 404。
+
+> 這兩支**唯讀**——管理員這邊不提供刪除，避免誤刪會員資料；會員自己可以在 /playground 刪自己的對話。
+> 體驗模式（未登入試用）的對話**不落資料庫**，所以不會出現在這裡。
+
 ## 5b. 會員與帳號 API
 
 - `GET /api/me` → `{ user }`（未登入 `{ user:null }`）。user 含 `email`、`name`、`picture`、`status`（pending/approved/blocked）、`is_admin`、`approved`、`services`（被批准的服務陣列，如 `["relay","vpn","playground"]`；管理員固定是全部）、`has_key`、`key_hint`、`key_at`、`relay_calls`、`usage`（2026-07-14 起：今日用量 `{ relay_today, relay_limit, pg_today, pg_limit }` — 只含有權限的服務、管理員 limit 是 `null`＝無上限、兩服務都沒權限時整塊省略；UTC 午夜重置）。**`vpn_token`／`vpn_pulls` 只有「管理員或被批准 vpn 服務」的人才有**（VPN 隱形：無權限者連鍵都不出現，`/vpn` 頁對他們也回 SPA、選單也不渲染）。
@@ -437,7 +459,7 @@ Authorization: Bearer uak-你的金鑰
 **體驗模式（2026-07-17 v2.0.0，ADR-0009）**：管理員開 `demo_mode`＋設 `demo_channel` 後，**完全未登入**的訪客也能打 `GET /api/playground/models`（只回 demo 那一組、渠道顯示名固定「體驗模式」）與 `POST /api/playground/chat`（SSE 第一筆事件是 `{demo:true}` 而非 `{conv}`）。限制：渠道與模型鎖白名單、輸入整包 4000 字、回覆強制 `demo_max_tokens`、**對話不落資料庫**；fail-closed 限流（每 IP 分鐘/日＋全站日；超額 429 `demo-rate-limited`／`demo-quota-exceeded`，限流器故障 503 `demo-unavailable`）。
 
 - `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
-- `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。
+- `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。**管理員要看全站所有人的對話**看 §5 的 `/api/admin/conversations`（或 /logs 的「總對話紀錄」分頁）。
 - `GET /api/playground/conversations/{id}` → `{ conv, messages:[{ id, role, content, model, created_at }] }`。
 - `PUT /api/playground/conversations/{id}` 本體 `{ "title":"新名字" }` 改名；`DELETE` 刪除（連同訊息）。
 - `POST /api/playground/chat` 本體：
@@ -469,6 +491,7 @@ Authorization: Bearer uak-你的金鑰
 | 頁面掛進選單 | GET /api/menu → items 加 `{ kind:"link", label, url:"/p/{slug}" }` → PUT /api/admin/menu |
 | 改站名 | PUT /api/admin/settings `{ "brand":"…" }` |
 | 看流量 | GET /api/logs?limit=50&since=今天零點的UTC時間 |
+| 看全站對話紀錄 | GET /api/admin/conversations（找某人加 `?q=信箱`）→ GET /api/admin/conversations/{id} 讀內容 |
 | 加中轉管道 | POST /api/admin/relay/channels `{ name, kind, base_url, api_key, models:["gpt-4o-mini"] }`（slug 自動產生） |
 | 批准會員（全部服務） | GET /api/admin/users 找 id → PUT /api/admin/users/{id} `{ "action":"approve" }` |
 | 批准／收回單一服務 | PUT /api/admin/users/{id} `{ "action":"set_services", "services":["relay","playground"] }`（整包覆蓋） |

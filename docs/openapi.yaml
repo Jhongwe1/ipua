@@ -380,6 +380,34 @@ paths:
       security: [{ adminToken: [] }, { sessionCookie: [] }]
       responses:
         "200": { description: "{ ok }" }
+  /api/admin/conversations:
+    get:
+      tags: [管理員]
+      summary: 全站 Playground 對話總表（新→舊，帶會員信箱）
+      security: [{ adminToken: [] }, { sessionCookie: [] }]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - {
+            name: q,
+            in: query,
+            description: 模糊搜尋標題／會員信箱／姓名／模型／渠道,
+            schema: { type: string }
+          }
+        - { name: user_id, in: query, description: 只看某個會員, schema: { type: integer } }
+      responses:
+        "200": { description: "{ rows, total }" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/conversations/{id}:
+    get:
+      tags: [管理員]
+      summary: 讀任一會員的單則對話（含全部訊息，舊→新）
+      security: [{ adminToken: [] }, { sessionCookie: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: "{ conv, messages }" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: 找不到這個對話 }
   /api/admin/media:
     post:
       tags: [管理員]
