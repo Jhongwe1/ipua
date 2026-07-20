@@ -47,8 +47,7 @@ ipua/
 │     ├─ articles/        ← GET /api/articles、/api/articles/12（公開：只回已發佈）
 │     ├─ pages/           ← GET /api/pages、/api/pages/about（公開：只回已發佈）
 │     └─ admin/           ← 管理員 API（都要金鑰）：articles、pages 增刪改查、media 上傳、
-│                            menu 覆蓋選單、settings 改站名/Playground 全員開關、apidoc 取 API 文件、
-│                            conversations 全站對話總表（唯讀）
+│                            menu 覆蓋選單、settings 改站名/Playground 全員開關、apidoc 取 API 文件
 └─ public/                ← 靜態資產（wrangler [assets]；worker 沒接手的路徑走這裡＋SPA fallback）
    ├─ index.html          ← 主站（☰ 側邊欄；選單由 /api/menu 動態載入）
    ├─ assets/logs.js      ← /logs 的頁面行為（外殼由 src/routes/logs.ts 輸出）
@@ -79,8 +78,6 @@ wrangler.toml 已寫好 worker 名（uaip）、進入點（src/index.ts）與靜
 
 ### 三個看紀錄的地方
 1. **https://uaip.cc.cd/logs** — 自建管理頁（要管理金鑰），可搜尋、看統計、點列展開細節。
-   四個分頁：**訪客**（每次頁面瀏覽）、**錯誤**（站內錯誤日誌）、**用量**（req_log 計量與估算成本）、
-   **總對話紀錄**（2026-07-20：全站會員在 Playground 存下的對話，新→舊，會員信箱以灰字標示；點一列展開整串內容）。
 2. **Cloudflare 後台** → Storage & Databases → D1 → ipua-logs → Console，直接下 SQL：
    `SELECT * FROM visits ORDER BY id DESC LIMIT 50;`
 3. 終端機：`npx wrangler d1 execute ipua-logs --remote -y --command "SELECT ..."`

@@ -73,8 +73,6 @@ import { onRequestPost as admMedia } from "./routes/api/admin/media.js";
 import { onRequestPut as admMenu } from "./routes/api/admin/menu.js";
 import { onRequestGet as admSettingsGet, onRequestPut as admSettings } from "./routes/api/admin/settings.js";
 import { onRequestGet as admStats } from "./routes/api/admin/stats.js";
-import { onRequestGet as admConvList } from "./routes/api/admin/conversations/index.js";
-import { onRequestGet as admConvGet } from "./routes/api/admin/conversations/[id].js";
 import { onRequestGet as admPricesGet, onRequestPut as admPricesPut } from "./routes/api/admin/prices.js";
 import {
   onRequestGet as admArtList,
@@ -121,8 +119,6 @@ export const ROUTES: Array<[string, MethodMap]> = [
   ["/api/admin/menu", { PUT: admMenu }],
   ["/api/admin/settings", { GET: admSettingsGet, PUT: admSettings }],
   ["/api/admin/stats", { GET: admStats }],
-  ["/api/admin/conversations", { GET: admConvList }],
-  ["/api/admin/conversations/:id", { GET: admConvGet }],
   ["/api/admin/prices", { GET: admPricesGet, PUT: admPricesPut }],
   ["/api/admin/articles", { GET: admArtList, POST: admArtCreate }],
   ["/api/admin/articles/:id", { GET: admArtGet, PUT: admArtPut, DELETE: admArtDel }],

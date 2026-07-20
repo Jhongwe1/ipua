@@ -16,7 +16,6 @@
 | Playground 開放給所有登入會員 | `PUT /api/admin/settings {"pg_open":true}`（false＝關閉，回到逐人批准） |
 | 看流量 | `GET /api/logs` |
 | 看站內錯誤／用量（v1.0.0） | `GET /api/admin/errors`、`GET /api/admin/stats?days=7`；健康檢查 `GET /api/health`（公開） |
-| 看全站會員的 Playground 對話 | `GET /api/admin/conversations`（`?q=` 找人）→ `GET /api/admin/conversations/{id}` 讀內容（唯讀） |
 | 批准／管理會員（可分服務） | `GET /api/admin/users`、`PUT /api/admin/users/{id} {"action":"approve"}` 或 `{"action":"set_services","services":[…]}` |
 | 設會員／全域配額（v1.0.0） | `PUT /api/admin/users/{id} {"action":"set_quota",…}`（個人）、`PUT /api/admin/settings {"quota_relay_day":…}`（全域） |
 | 加／改 API 中轉管道（含模型清單） | `POST/PUT/DELETE /api/admin/relay/channels…`（`models` 必填） |

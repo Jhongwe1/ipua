@@ -28,16 +28,6 @@ const PAGE_CSS = `
   .more-row{display:flex;justify-content:center;gap:10px;margin-top:16px}
   .pagenote{margin-top:18px;text-align:center;color:var(--sub);font-size:11px}
   @media(max-width:480px){.chip b{font-size:18px}}
-  /* 總對話紀錄分頁：會員信箱一律灰字；展開列是整串對話 */
-  .who-mail{color:var(--muted);font-size:12px}
-  .conv-title{font-weight:600}
-  /* 寬度綁畫面而不是表格（表格 min-width:700px）— 手機展開對話不用左右拖 */
-  .conv-thread{display:flex;flex-direction:column;gap:10px;width:min(660px,calc(100vw - 72px));
-    max-height:460px;overflow-y:auto;padding:2px}
-  .cmsg{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--card)}
-  .cmsg.user{border-left:3px solid var(--line2)}
-  .crole{font-size:11px;color:var(--muted);letter-spacing:.04em;margin-bottom:6px}
-  .ctext{font-size:13px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
 `;
 
 const BODY = `
@@ -58,7 +48,6 @@ const BODY = `
     <button id="tabVisits" class="tabbtn on" type="button">訪客</button>
     <button id="tabErrors" class="tabbtn" type="button">錯誤</button>
     <button id="tabStats" class="tabbtn" type="button">用量</button>
-    <button id="tabConvs" class="tabbtn" type="button">總對話紀錄</button>
   </div>
 
   <!-- 分頁 1：訪客紀錄 -->
@@ -161,26 +150,8 @@ const BODY = `
     </div>
     <p class="pagenote">數據源＝req_log（中轉與 Playground 每次請求一列；90 天自動輪替）· p50/p95 由最近 2000 筆原始值計算 · 成本為<b>估算值</b>（上游回報的 token 數 × 管理員在 /api/admin/prices 維護的定價）</p>
   </div>
-
-  <!-- 分頁 4：總對話紀錄（pg_conversations：全站會員在 Playground 存下的對話） -->
-  <div id="paneConvs" class="hidden">
-    <div class="toolbar">
-      <button id="convRefreshBtn" class="ghost" type="button">重新整理</button>
-    </div>
-    <div class="card tbl-card">
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>最後更新</th><th>會員</th><th>對話</th><th>渠道 / 模型</th><th>則數</th></tr></thead>
-          <tbody id="convBody"></tbody>
-        </table>
-      </div>
-      <div id="convEmpty" class="tbl-empty hidden">還沒有任何對話紀錄。</div>
-    </div>
-    <div class="more-row"><button id="convMoreBtn" class="ghost hidden">載入更多</button></div>
-    <p class="pagenote">全站會員在 Playground 存下的對話，新→舊排列 · 點一列展開完整內容 · 體驗模式（未登入試用）的對話不進資料庫，不會出現在這裡</p>
-  </div>
 </section>
-<script data-nonce src="/assets/logs.js?v=20260720"><\/script>`;
+<script data-nonce src="/assets/logs.js?v=20260717"><\/script>`;
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）
