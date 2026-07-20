@@ -34,9 +34,20 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
     const key = c.ch.api_key === undefined ? old.api_key : c.ch.api_key;
     const slug = c.ch.slug || old.slug; // 沒帶 slug＝沿用舊代稱（會員的 /relay 網址不變）
     await env.DB.prepare(
-      "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,models=?6,enabled=?7 WHERE id=?8"
+      "UPDATE relay_channels SET slug=?1,name=?2,kind=?3,base_url=?4,api_key=?5,models=?6,system_prompt=?7,extra_body=?8,enabled=?9 WHERE id=?10"
     )
-      .bind(slug, c.ch.name, c.ch.kind, c.ch.base_url, key, c.ch.models, c.ch.enabled, id)
+      .bind(
+        slug,
+        c.ch.name,
+        c.ch.kind,
+        c.ch.base_url,
+        key,
+        c.ch.models,
+        c.ch.system_prompt,
+        c.ch.extra_body,
+        c.ch.enabled,
+        id
+      )
       .run();
     const row = await env.DB.prepare("SELECT * FROM relay_channels WHERE id=?1").bind(id).first();
     // 稽核不落金鑰本體，只記這次動作有沒有動到金鑰

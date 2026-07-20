@@ -61,6 +61,8 @@ export interface ChannelRow {
   base_url: string;
   api_key: string;
   models: string;
+  system_prompt: string; // 只給 LLM Playground 注入的系統提示詞；/relay 中轉不讀這欄（migration 0005）
+  extra_body: string; // 合併進 playground 上游請求本體的額外參數（JSON 物件字串）；/relay 不讀（migration 0006）
   enabled: number;
   created_at: string;
   [key: string]: unknown;

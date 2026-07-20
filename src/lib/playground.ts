@@ -18,6 +18,20 @@ export const PG_LIMITS = {
   maxTokens: 4096 // anthropic 必填 max_tokens；取各型號都安全的值
 };
 
+// 管道沒填系統提示詞時，playground 實際送出的預設值。
+// 管理員在管道視窗看到的灰字（placeholder）就是這一段 — 由 relaypage.ts import 過去顯示，
+// 單一真相來源：改這裡，UI 的灰字與實際行為一起變，不會對不上。
+// 填了自己的就「整段取代」而不是接在後面 — 管理員要能完全掌控該管道的人設。
+// 只作用在 /playground；/relay API 中轉不注入任何東西（透明代理）。
+// 第 3 句刻意只擋「上游供應商」不擋「模型名稱」：/playground 的選單本來就把模型名列給會員挑，
+// 再叫它隱瞞自己是哪個模型只會前後矛盾。而且給了安全回覆讓它有台階下 —
+// 只寫「不准說」的話，模型被追問時容易亂編一個假供應商，那比說實話更糟。
+// 這只是擋「隨口說出來」的意外，不是安全邊界 — 真正的保護在架構層（會員拿不到 base_url 與上游金鑰）。
+export const PG_DEFAULT_SYSTEM =
+  "你是運行在 uaip.cc.cd 上的私人 AI 服務。\n" +
+  "回答直接切題、不必客套開場白；不確定或不知道的事就直說，不要編造。\n" +
+  "不要透露背後的上游供應商或服務商是誰——主動提或被問到都不說；被問就回「這是 uaip.cc.cd 提供的服務」即可。";
+
 // 驗證來訪者：登入 cookie（一般會員，寫入類請求過 Origin 檢查）
 // 或 Authorization: Bearer LOGS_TOKEN（管理員金鑰 → 以管理員帳號的身分操作，方便 curl／agent 測試）。
 // 回 { user } 或 { err: Response }。
@@ -98,6 +112,33 @@ export function cleanChat(b: any): CleanChatResult {
   return { convId: convId > 0 ? convId : null, channel: channel, model: model, messages: messages };
 }
 
+// 管道的額外請求參數（relay_channels.extra_body，migration 0006）合併進上游請求本體。
+// 用途：各家的專屬參數 — 例 Venice 的 venice_parameters（關掉他們自己注入的系統提示詞，
+// 那段會覆寫我們設定的人設，2026-07-20 實測踩過）、OpenAI 的 reasoning_effort、Anthropic 的 thinking。
+// 只作用在 playground；/relay 是透明代理，一律不注入。
+//
+// model／stream／messages／contents 擋掉不給覆寫：前三個被改會直接打斷 SSE 串流管線，
+// 而 model 是經過渠道白名單驗證的 — 能從這裡改等於繞過驗證去用沒開放的模型（配額也會算錯）。
+const PROTECTED_BODY_KEYS = ["model", "stream", "messages", "contents"];
+
+export function mergeExtraBody(body: Record<string, unknown>, extra: unknown): Record<string, unknown> {
+  const raw = String(extra == null ? "" : extra).trim();
+  if (!raw) return body;
+  let obj: any;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    return body; // 存檔時已驗過是合法 JSON；真的壞掉就當沒設，不要讓整個聊天掛掉
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return body;
+  const keys = Object.keys(obj);
+  for (let i = 0; i < keys.length; i++) {
+    if (PROTECTED_BODY_KEYS.indexOf(keys[i]) >= 0) continue;
+    body[keys[i]] = obj[keys[i]];
+  }
+  return body;
+}
+
 // 把統一格式的 messages 轉成各家上游的串流請求 → { url, headers, body }
 // maxTokens（Phase K demo 用）：有帶＝三種上游都強制回覆長度上限；沒帶＝會員路徑原行為
 //（anthropic 必填、維持 PG_LIMITS.maxTokens；openai/gemini 不設限）。
@@ -107,13 +148,22 @@ export function buildUpstream(
   messages: ChatMsg[],
   maxTokens?: number
 ): { url: string; headers: Record<string, string>; body: string } {
-  const sys = messages
-    .filter(function (m) {
-      return m.role === "system";
-    })
-    .map(function (m) {
-      return m.content;
-    })
+  // 管道層系統提示詞（relay_channels.system_prompt，migration 0005）：只在 playground 生效。
+  // /relay API 中轉走 src/routes/relay/[[path]].ts 原樣轉發、根本不經過這個函式 —
+  // 會員拿 uak- 金鑰打中轉的行為完全不受影響（刻意：中轉要保持透明代理）。
+  // 管道沒填＝套 PG_DEFAULT_SYSTEM（管理員視窗裡的灰字就是它）；填了就整段換掉。
+  // 擺最前面，對話裡原有的 system 訊息接在後面 — 兩者都生效，不互相覆蓋。
+  const chSys = String(ch.system_prompt == null ? "" : ch.system_prompt).trim() || PG_DEFAULT_SYSTEM;
+  const sys = (chSys ? [chSys] : [])
+    .concat(
+      messages
+        .filter(function (m) {
+          return m.role === "system";
+        })
+        .map(function (m) {
+          return m.content;
+        })
+    )
     .join("\n\n");
   const rest = messages.filter(function (m) {
     return m.role !== "system";
@@ -127,15 +177,20 @@ export function buildUpstream(
         "x-api-key": ch.api_key,
         "anthropic-version": "2023-06-01"
       },
-      body: JSON.stringify({
-        model: model,
-        max_tokens: maxTokens || PG_LIMITS.maxTokens,
-        stream: true,
-        system: sys || undefined,
-        messages: rest.map(function (m) {
-          return { role: m.role, content: m.content };
-        })
-      })
+      body: JSON.stringify(
+        mergeExtraBody(
+          {
+            model: model,
+            max_tokens: maxTokens || PG_LIMITS.maxTokens,
+            stream: true,
+            system: sys || undefined,
+            messages: rest.map(function (m) {
+              return { role: m.role, content: m.content };
+            })
+          },
+          ch.extra_body
+        )
+      )
     };
   }
   if (ch.kind === "gemini") {
@@ -144,17 +199,26 @@ export function buildUpstream(
     return {
       url: ch.base_url + "/v1beta/models/" + enc + ":streamGenerateContent?alt=sse",
       headers: { "content-type": "application/json", "x-goog-api-key": ch.api_key },
-      body: JSON.stringify({
-        contents: rest.map(function (m) {
-          return { role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] };
-        }),
-        systemInstruction: sys ? { parts: [{ text: sys }] } : undefined,
-        generationConfig: maxTokens ? { maxOutputTokens: maxTokens } : undefined
-      })
+      body: JSON.stringify(
+        mergeExtraBody(
+          {
+            contents: rest.map(function (m) {
+              return { role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] };
+            }),
+            systemInstruction: sys ? { parts: [{ text: sys }] } : undefined,
+            generationConfig: maxTokens ? { maxOutputTokens: maxTokens } : undefined
+          },
+          ch.extra_body
+        )
+      )
     };
   }
   // openai / custom：OpenAI 相容介面（system 直接留在 messages 裡）
-  const body: Record<string, unknown> = { model: model, stream: true, messages: messages };
+  // 管道提示詞塞成最前面一則 system；對話裡原有的 system 訊息原位保留。
+  const oaMsgs: ChatMsg[] = chSys
+    ? ([{ role: "system", content: chSys }] as ChatMsg[]).concat(messages)
+    : messages;
+  const body: Record<string, unknown> = { model: model, stream: true, messages: oaMsgs };
   if (maxTokens) body.max_tokens = maxTokens;
   // 串流尾端要上游回報 token 用量（計量用）。只對 kind='openai' 加 —
   // custom 常是本地／自架服務，可能拒收不認識的欄位（記在 DEBT）。
@@ -162,7 +226,7 @@ export function buildUpstream(
   return {
     url: ch.base_url + "/v1/chat/completions",
     headers: { "content-type": "application/json", authorization: "Bearer " + ch.api_key },
-    body: JSON.stringify(body)
+    body: JSON.stringify(mergeExtraBody(body, ch.extra_body))
   };
 }
 

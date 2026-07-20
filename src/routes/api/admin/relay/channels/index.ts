@@ -59,6 +59,8 @@ export interface RelayChannelInput {
   kind: string;
   base_url: string;
   models: string;
+  system_prompt: string;
+  extra_body: string;
   enabled: number;
   api_key?: string;
 }
@@ -89,12 +91,35 @@ export function cleanChannel(b: any): CleanRelayChannelResult {
   const m = cleanModels(b.models);
   if (m.err !== undefined) return { err: m.err };
   if (!m.list.length) return { err: "至少要填一個模型名稱（一行一個）" };
+  // Playground 系統提示詞（選填，只作用在 /playground — /relay 中轉不讀）。
+  // 太長「退回」而不是像 name 那樣默默 slice：這欄是人一字一句寫的，
+  // 悄悄砍掉尾巴會讓提示詞語意壞掉、而且完全查不出原因。
+  const sysPrompt = String(b.system_prompt == null ? "" : b.system_prompt).trim();
+  if (sysPrompt.length > 8000)
+    return { err: "系統提示詞太長（上限 8000 字，目前 " + sysPrompt.length + " 字）" };
+  // 額外請求參數（選填）：合併進 playground 送給上游的請求本體，處理各家專屬參數。
+  // 存檔當下就驗合法性 — 讓錯誤在管理員按「儲存」時就跳出來，
+  // 而不是等某個會員去聊天才發現整條上游請求壞掉、還不知道為什麼。
+  const extraBody = String(b.extra_body == null ? "" : b.extra_body).trim();
+  if (extraBody.length > 4000) return { err: "額外請求參數太長（上限 4000 字）" };
+  if (extraBody) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(extraBody);
+    } catch (e: any) {
+      return { err: "額外請求參數不是合法 JSON：" + String((e && e.message) || e) };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return { err: "額外請求參數要是 JSON 物件（{ … }），不能是陣列或單一數值" };
+  }
   const ch: RelayChannelInput = {
     slug: slug,
     name: name,
     kind: kind,
     base_url: base.slice(0, 300),
     models: m.list.join(","),
+    system_prompt: sysPrompt,
+    extra_body: extraBody,
     enabled: b.enabled === false || b.enabled === 0 ? 0 : 1
   };
   if (b.api_key !== undefined)
@@ -112,6 +137,8 @@ export function maskRow(r: any) {
     kind: r.kind,
     base_url: r.base_url,
     models: modelList(r),
+    system_prompt: r.system_prompt || "", // 管理員專用端點才回這欄；會員的 /api/relay/channels 是指定欄位 SELECT，不會外洩
+    extra_body: r.extra_body || "", // 同上，只有管理員看得到
     enabled: r.enabled,
     created_at: r.created_at,
     has_key: !!r.api_key,
@@ -150,7 +177,7 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await env.DB.prepare(
-        "INSERT INTO relay_channels (slug,name,kind,base_url,api_key,models,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+        "INSERT INTO relay_channels (slug,name,kind,base_url,api_key,models,system_prompt,extra_body,enabled,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
       )
         .bind(
           slug,
@@ -159,6 +186,8 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
           c.ch.base_url,
           c.ch.api_key || "",
           c.ch.models,
+          c.ch.system_prompt,
+          c.ch.extra_body,
           c.ch.enabled,
           new Date().toISOString()
         )

@@ -5,6 +5,7 @@
 import { html, pageShell } from "./site.js";
 import { getChromeFor } from "./chrome.js";
 import { MEMBER_CSS, MEMBER_JS } from "./memberui.js";
+import { PG_DEFAULT_SYSTEM } from "./playground.js";
 import type { Env } from "../types.js";
 
 const PAGE_CSS = `
@@ -288,12 +289,34 @@ const RELAY_JS = `
       var o=el("option",null,p[1]);o.value=p[0];if(c.kind===p[0])o.selected=true;sel.appendChild(o);
     });
     kf.appendChild(sel);dlg.appendChild(kf);
-    var fBase=field(tx("上游 Base URL","Base URL"),"cBase",c.base_url,"https://api.openai.com");
+    // Base URL 只填「根網址」：/v1、/v1beta 這段版本路徑由程式依 kind 自己接
+    //（playground 的 buildUpstream、/relay 轉發都是）。各家官方文件給的網址多半已含 /v1
+    // （例 Venice 寫 https://api.venice.ai/api/v1），照貼會變成兩個 v1 → 上游回 404 且畫面查不出原因，
+    // 所以標籤直接寫明。2026-07-20 實際踩過。
+    var fBase=field(tx("上游 Base URL（不用加 /v1、/v1beta）","Base URL (no /v1 or /v1beta)"),"cBase",c.base_url,"https://api.openai.com");
     // 模型名稱（必填）：一行一個；會員頁與 LLM Playground 都靠這份清單
     var mf=el("div","field");mf.appendChild(el("label",null,tx("模型名稱（一行一個，必填）","Models (one per line, required)")));
     var fModels=el("textarea");fModels.rows=3;fModels.placeholder="gpt-4o-mini\\ngpt-4o";
     fModels.value=(c.models||[]).join("\\n");
     mf.appendChild(fModels);dlg.appendChild(mf);
+    // Playground 系統提示詞（選填）：只作用在 /playground；/relay API 中轉是透明代理，
+    // 不會注入這段（會員送什麼就轉什麼）。標籤寫明，免得以為中轉那邊也會套用。
+    var sf=el("div","field");
+    sf.appendChild(el("label",null,tx("Playground 系統提示詞（留空＝套用灰字預設；不影響 API 中轉）","Playground system prompt (blank = the grey default; not applied to API relay)")));
+    var fSys=el("textarea");fSys.rows=4;
+    // 灰字＝留空時伺服器實際會送出的那段（PG_DEFAULT_SYSTEM，從 playground.ts import — 單一真相來源）
+    fSys.placeholder=${JSON.stringify(PG_DEFAULT_SYSTEM)};
+    fSys.value=c.system_prompt||"";
+    sf.appendChild(fSys);dlg.appendChild(sf);
+    // 額外請求參數（選填）：合併進 playground 送給上游的請求本體，處理各家專屬參數。
+    // 灰字放 Venice 那個實例 — 它會在我們的系統提示詞後面偷接自己的（含身分覆寫），要這個才關得掉。
+    // 伺服器存檔時會驗 JSON 合法性；model/stream/messages/contents 擋著不給覆寫。
+    var ef=el("div","field");
+    ef.appendChild(el("label",null,tx("額外請求參數 JSON（選填，不影響 API 中轉）","Extra request params JSON (optional — not applied to API relay)")));
+    var fExtra=el("textarea");fExtra.rows=3;
+    fExtra.placeholder='{"venice_parameters":{"include_venice_system_prompt":false}}';
+    fExtra.value=c.extra_body||"";
+    ef.appendChild(fExtra);dlg.appendChild(ef);
     var fKey=field(tx("上游 API Key","Upstream key"),"cKey","",c.has_key?tx("（留空＝不變；目前 "+c.key_hint+"）","(blank = keep)"):tx("上游平台給你的金鑰","upstream key"));
     fKey.type="password";
 
@@ -326,7 +349,7 @@ const RELAY_JS = `
     cancel.addEventListener("click",close);
     ov.addEventListener("click",function(e){if(e.target===ov)close();});
     save.addEventListener("click",function(){
-      var payload={name:fName.value.trim(),kind:sel.value,base_url:fBase.value.trim(),models:fModels.value,enabled:isNew?1:!!c.enabled};
+      var payload={name:fName.value.trim(),kind:sel.value,base_url:fBase.value.trim(),models:fModels.value,system_prompt:fSys.value,extra_body:fExtra.value,enabled:isNew?1:!!c.enabled};
       if(fKey.value!=="")payload.api_key=fKey.value;      // 空＝不帶＝保留舊值（編輯）；新增時空＝空金鑰
       else if(isNew)payload.api_key="";
       save.disabled=true;save.textContent=tx("儲存中…","Saving…");

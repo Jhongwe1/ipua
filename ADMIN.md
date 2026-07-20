@@ -307,6 +307,8 @@ printf '你的CLIENT_SECRET' | npx wrangler secret put GOOGLE_CLIENT_SECRET
 - **核准會員**：/members 頁（管理員）→ 待核准清單按「核准」。或 API：`PUT /api/admin/users/{id} {"action":"approve"}`。
 - **加中轉管道**：/relay 頁（管理員）「管道管理」→ 新增。**選類型（OpenAI／Anthropic／Gemini）會自動帶入官方 Base URL**，用便宜的第三方渠道就把網址改成他家的、金鑰填他給的（你手打過的網址不會被自動蓋掉）。之後會員用自己的 `uak-` 金鑰 + Base URL `https://uaip.cc.cd/relay/<slug>` 就能打。**每找到一個渠道就加一個**，暫時不想用就按「停用」（留著不刪）。
   - ✅ **2026-07-12 已上線 Gemini 官方渠道**（slug `gemini`），正式站實測會員視角可用：Gemini SDK（`x-goog-api-key`）、OpenAI SDK（`/relay/gemini/v1beta/openai` + `Authorization: Bearer`）、串流三種都通。
+  - **Playground 系統提示詞（選填）**：管道視窗裡可以填一段，會員在 /playground 用這個管道聊天時自動套用（上限 8000 字，改了立刻對舊對話生效）。**留空＝套用那格灰字顯示的內建預設**（「你是運行在 uaip.cc.cd 上的私人 AI 服務…」）；想換掉就直接打自己的，會整段取代預設。
+  - **額外請求參數 JSON（選填）**：填 JSON 物件，會合併進 playground 送給上游的請求本體。**Venice 一定要填 `{"venice_parameters":{"include_venice_system_prompt":false}}`** — 否則 Venice 會在你的提示詞後面偷接一段自己的（含「You are running on Venice.ai」與身分覆寫），會員問「你是誰」就會被告知上游是 Venice（2026-07-20 實測踩過）。同一格以後也能填 OpenAI 的 `reasoning_effort`、Anthropic 的 `thinking` 等各家專屬參數。一樣不影響 API 中轉。**API 中轉完全不受影響** — 會員拿 `uak-` 金鑰打 `/relay/<slug>` 時是透明代理，不會被偷塞這段。會員看不到也改不掉這段提示詞。
 - **加 VPN 渠道**：/vpn 頁（管理員）「渠道管理」→ 新增，貼機場訂閱網址（kind=sub）或自己的節點連結（kind=nodes）。**會員的訂閱網址永遠是同一條**，伺服器自動把所有啟用中渠道的節點合併給他們。
 - 護欄：管理員不能在網頁上封鎖／刪除自己，也動不了 ADMIN_EMAILS 指定的帳號（要改就改環境變數）。
 

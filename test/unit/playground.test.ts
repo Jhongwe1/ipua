@@ -8,7 +8,9 @@ import {
   extractDelta,
   extractFull,
   chModels,
-  PG_LIMITS
+  mergeExtraBody,
+  PG_LIMITS,
+  PG_DEFAULT_SYSTEM
 } from "../../src/lib/playground.js";
 
 describe("cleanChat（聊天請求驗證）", () => {
@@ -109,7 +111,8 @@ describe("buildUpstream（三種上游的請求轉換）", () => {
     expect(b.model).toBe("claude-x");
     expect(b.stream).toBe(true);
     expect(b.max_tokens).toBe(PG_LIMITS.maxTokens);
-    expect(b.system).toBe("你是助理");
+    // 這個 ch 沒填 system_prompt → 套預設，對話自己的 system 接在後面
+    expect(b.system).toBe(PG_DEFAULT_SYSTEM + "\n\n你是助理");
     expect(b.messages.every((m: any) => m.role !== "system")).toBe(true);
     expect(b.messages.length).toBe(3);
   });
@@ -127,7 +130,7 @@ describe("buildUpstream（三種上游的請求轉換）", () => {
     expect(up.headers["x-goog-api-key"]).toBe("sk-goog");
     expect(up.headers.authorization).toBeUndefined(); // 多送 Authorization 會 401（實測踩過）
     const b = JSON.parse(up.body);
-    expect(b.systemInstruction.parts[0].text).toBe("你是助理");
+    expect(b.systemInstruction.parts[0].text).toBe(PG_DEFAULT_SYSTEM + "\n\n你是助理");
     expect(b.contents.map((c: any) => c.role)).toEqual(["user", "model", "user"]);
   });
 
@@ -138,8 +141,120 @@ describe("buildUpstream（三種上游的請求轉換）", () => {
     expect(up.headers.authorization).toBe("Bearer sk-oai");
     const b = JSON.parse(up.body);
     expect(b.stream).toBe(true);
-    expect(b.messages.length).toBe(4);
-    expect(b.messages[0].role).toBe("system");
+    expect(b.messages.length).toBe(5); // 預設提示詞 1 則 + 原本 4 則
+    expect(b.messages[0]).toEqual({ role: "system", content: PG_DEFAULT_SYSTEM });
+    expect(b.messages[1].role).toBe("system"); // 對話自己的 system 原位保留
+  });
+});
+
+describe("buildUpstream — 管道系統提示詞（只作用在 playground）", () => {
+  const plain: ChatMsg[] = [{ role: "user", content: "嗨" }];
+  const withSys: ChatMsg[] = [
+    { role: "system", content: "對話自己的" },
+    { role: "user", content: "嗨" }
+  ];
+  const chan = (kind: string, sp: unknown) =>
+    ({ kind, base_url: "https://up.example.com", api_key: "k", system_prompt: sp }) as unknown as ChannelRow;
+
+  it("anthropic：注入 system 欄位", () => {
+    const b = JSON.parse(buildUpstream(chan("anthropic", "管道的"), "claude-x", plain).body);
+    expect(b.system).toBe("管道的");
+  });
+
+  it("gemini：注入 systemInstruction", () => {
+    const b = JSON.parse(buildUpstream(chan("gemini", "管道的"), "gemini-x", plain).body);
+    expect(b.systemInstruction.parts[0].text).toBe("管道的");
+  });
+
+  it("openai／custom：塞成 messages 最前面一則 system", () => {
+    for (const kind of ["openai", "custom"]) {
+      const b = JSON.parse(buildUpstream(chan(kind, "管道的"), "gpt-x", plain).body);
+      expect(b.messages).toEqual([
+        { role: "system", content: "管道的" },
+        { role: "user", content: "嗨" }
+      ]);
+    }
+  });
+
+  it("對話本來就有 system 時：管道的擺前面，兩者都留著（不互相覆蓋）", () => {
+    const a = JSON.parse(buildUpstream(chan("anthropic", "管道的"), "claude-x", withSys).body);
+    expect(a.system).toBe("管道的\n\n對話自己的");
+    const o = JSON.parse(buildUpstream(chan("openai", "管道的"), "gpt-x", withSys).body);
+    expect(o.messages.map((m: any) => m.content)).toEqual(["管道的", "對話自己的", "嗨"]);
+  });
+
+  it("空字串／只有空白／未設＝套用預設 PG_DEFAULT_SYSTEM", () => {
+    for (const sp of ["", "   ", undefined, null]) {
+      const o = JSON.parse(buildUpstream(chan("openai", sp), "gpt-x", plain).body);
+      expect(o.messages).toEqual([
+        { role: "system", content: PG_DEFAULT_SYSTEM },
+        { role: "user", content: "嗨" }
+      ]);
+      const a = JSON.parse(buildUpstream(chan("anthropic", sp), "claude-x", plain).body);
+      expect(a.system).toBe(PG_DEFAULT_SYSTEM);
+      const g = JSON.parse(buildUpstream(chan("gemini", sp), "gemini-x", plain).body);
+      expect(g.systemInstruction.parts[0].text).toBe(PG_DEFAULT_SYSTEM);
+    }
+  });
+
+  it("填了自己的＝整段取代預設，不是接在預設後面", () => {
+    const a = JSON.parse(buildUpstream(chan("anthropic", "只有我"), "claude-x", plain).body);
+    expect(a.system).toBe("只有我");
+    expect(a.system).not.toContain("uaip.cc.cd");
+  });
+
+  it("預設值本身：提到站名、是非空的單一真相來源", () => {
+    expect(PG_DEFAULT_SYSTEM).toContain("uaip.cc.cd");
+    expect(PG_DEFAULT_SYSTEM.trim()).toBe(PG_DEFAULT_SYSTEM); // 前後不留空白，否則 UI 灰字會歪
+  });
+
+  it("提示詞前後空白會被修掉", () => {
+    const b = JSON.parse(buildUpstream(chan("anthropic", "  管道的  "), "claude-x", plain).body);
+    expect(b.system).toBe("管道的");
+  });
+});
+
+describe("mergeExtraBody — 管道額外請求參數（只作用在 playground）", () => {
+  const VP = '{"venice_parameters":{"include_venice_system_prompt":false}}';
+
+  it("把 JSON 物件的鍵合併進請求本體", () => {
+    const b = mergeExtraBody({ model: "m" }, VP);
+    expect(b.venice_parameters).toEqual({ include_venice_system_prompt: false });
+    expect(b.model).toBe("m");
+  });
+
+  it("非關鍵欄位可以被覆寫（max_tokens、temperature…）", () => {
+    const b = mergeExtraBody({ max_tokens: 100 }, '{"max_tokens":9,"temperature":0.2}');
+    expect(b.max_tokens).toBe(9);
+    expect(b.temperature).toBe(0.2);
+  });
+
+  it("model／stream／messages／contents 擋著不給覆寫", () => {
+    const b = mergeExtraBody(
+      { model: "白名單內", stream: true, messages: ["原本"], contents: ["原本"] },
+      '{"model":"沒開放的","stream":false,"messages":[],"contents":[],"top_p":1}'
+    );
+    expect(b.model).toBe("白名單內"); // 能覆寫＝繞過渠道模型白名單
+    expect(b.stream).toBe(true); // 改掉會打斷 SSE 串流管線
+    expect(b.messages).toEqual(["原本"]);
+    expect(b.contents).toEqual(["原本"]);
+    expect(b.top_p).toBe(1); // 沒被擋的照樣進得來
+  });
+
+  it("空值／壞 JSON／陣列／純量＝原封不動，不讓聊天掛掉", () => {
+    for (const bad of ["", "   ", null, undefined, "{壞的", "[1,2]", '"字串"', "123", "null"]) {
+      expect(mergeExtraBody({ model: "m" }, bad)).toEqual({ model: "m" });
+    }
+  });
+
+  it("四種 kind 都吃得到（buildUpstream 端對端）", () => {
+    const mk = (kind: string) =>
+      ({ kind, base_url: "https://up.example.com", api_key: "k", extra_body: VP }) as unknown as ChannelRow;
+    const msgs: ChatMsg[] = [{ role: "user", content: "嗨" }];
+    for (const kind of ["openai", "custom", "anthropic", "gemini"]) {
+      const b = JSON.parse(buildUpstream(mk(kind), "m", msgs).body);
+      expect(b.venice_parameters).toEqual({ include_venice_system_prompt: false });
+    }
   });
 });
 

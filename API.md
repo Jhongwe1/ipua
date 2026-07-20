@@ -362,10 +362,15 @@ curl -X PUT https://uaip.cc.cd/api/admin/prices ^
 | `base_url` | **必填** 上游根網址，例 `https://api.openai.com` |
 | `api_key` | 上游金鑰（只有管理員 API 摸得到，回讀一律遮罩） |
 | `models` | **必填** 這個管道可用的模型名稱（陣列，或逗號／換行分隔的字串；限英數與 `. _ / : -`、上限 40 個）。會員頁與 LLM Playground 都靠這份清單 |
+| `system_prompt` | **選填** 這個管道在 **LLM Playground** 的系統提示詞（上限 8000 字，超過回 400、不截斷）。**留空＝套用內建預設**（程式裡的 `PG_DEFAULT_SYSTEM`，管理員視窗那格的灰字就是它）；填了就**整段取代**預設。**只作用在 `/playground`**：`/relay` API 中轉是透明代理，一律不注入任何提示詞 — 會員自己送什麼就轉什麼 |
+| `extra_body` | **選填** 合併進 **LLM Playground** 上游請求本體的額外參數，必須是 **JSON 物件字串**（上限 4000 字；存檔當下就驗，不合法回 400）。用來處理各家專屬參數，例 `{"venice_parameters":{"include_venice_system_prompt":false}}`、OpenAI 的 `reasoning_effort`、Anthropic 的 `thinking`。`model`／`stream`／`messages`／`contents` 擋著**不給覆寫**。**只作用在 `/playground`**，`/relay` 中轉不注入 |
 | `enabled` | 預設 true |
 
 - `GET` → `{ rows }`，每筆含 `models`（陣列）、`has_key`、`key_hint`（金鑰一律遮罩）。
-- `PUT /api/admin/relay/channels/{id}` 整包覆蓋（**`models` 也要帶齊**）；**本體沒帶 `api_key` 欄位＝保留舊金鑰**（帶空字串＝清掉）。
+- `PUT /api/admin/relay/channels/{id}` 整包覆蓋（**`models` 也要帶齊**）；**本體沒帶 `api_key` 欄位＝保留舊金鑰**（帶空字串＝清掉）。`system_prompt` 照整包覆蓋規則走 — **沒帶＝清空**（只有 `api_key` 因為是機密才特別「沒帶＝保留」）。
+- `extra_body` 為什麼需要（2026-07-20 實測）：Venice 這類供應商會在你的系統提示詞**後面**再注入一大段自己的（含 `You are running on Venice.ai` 與模型身分覆寫），排在後面又更具體，直接壓過管道設定的人設 — 要填 `{"venice_parameters":{"include_venice_system_prompt":false}}` 才關得掉。與其為單一供應商寫死，開成通用欄位。`model` 不給覆寫是刻意的：它經過渠道白名單驗證，能從這裡改等於繞過驗證用沒開放的模型。
+- 預設提示詞定義在 `src/lib/playground.ts` 的 `PG_DEFAULT_SYSTEM`（單一真相來源 — 管道視窗的灰字是 import 過去顯示的，改常數 UI 跟行為一起變）。
+- `system_prompt` 注入到哪：`anthropic` → 請求的 `system` 欄位；`gemini` → `systemInstruction`；`openai`／`custom` → `messages` 最前面補一則 `system`。對話裡原本就有的 `system` 訊息接在管道提示詞**後面**，兩者都生效、不互相覆蓋。提示詞每次請求即時注入，**不會**存進對話紀錄（`pg_messages`），所以改了立刻對舊對話生效。
 - 網頁上新增管道時，選 kind 會自動帶入該家的**官方 Base URL**；用其他供應商（便宜渠道／自架／本地模型）直接改掉即可（你手打過的網址不會被自動蓋掉）。
 - 會員看的 `GET /api/relay/channels` → `{ rows:[{ slug, name, kind, models }], approved }`（approved＝有沒有被批准 relay 服務）；/relay 頁上每個模型名稱都有一鍵複製。
 
