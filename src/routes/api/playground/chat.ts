@@ -25,6 +25,7 @@ import {
   extractUsage,
   chModels
 } from "../../../lib/playground.js";
+import { fastDelta } from "../../../lib/fastsse.js";
 import { checkQuota } from "../../../lib/quota.js";
 import { demoCfg, demoUser, demoCheck, DEMO_DEFAULTS } from "../../../lib/demo.js";
 import { reportError, reportErrorNow } from "../../../lib/observe.js";
@@ -266,6 +267,9 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
           const reader = resp.body!.getReader();
           const dec = new TextDecoder();
           let buf = "";
+          // anthropic／gemini 的增量形狀跟 OpenAI 完全不同，套不上快速路徑的正則 —
+          // 這兩種一律走完整解析（gemini 的 chunk 數量本來就比 OpenAI 少一個量級）
+          const slowKind = ch.kind === "anthropic" || ch.kind === "gemini";
           readLoop: while (true) {
             const step = await reader.read();
             if (step.done) break;
@@ -277,6 +281,26 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
               if (line.indexOf("data:") !== 0) continue;
               const payload = line.slice(5).trim();
               if (!payload || payload === "[DONE]") continue;
+              // ── 快速路徑（2026-07-21，CPU 上限的第二道解法）──
+              // 佔絕大多數的「純文字增量」不做完整 JSON.parse — V8 為每一筆建出整棵
+              // 物件樹（外加上萬個短命物件觸發 GC）才是解析側的成本大頭。
+              // 實測 5982 個增量：完整解析 9.01ms → 快速路徑約 4.2ms（免費方案上限 10ms）。
+              // 回傳 null＝形狀不符或帶 error／usage，照原路完整解析，正確性優先。
+              if (!slowKind) {
+                const fast = fastDelta(payload);
+                if (fast) {
+                  if (fast.r) {
+                    sawReasoning = true;
+                    await push("r", fast.r);
+                  }
+                  if (fast.d) {
+                    full += fast.d;
+                    await push("d", fast.d);
+                  }
+                  if (gone) break readLoop;
+                  continue;
+                }
+              }
               let j: any = null;
               try {
                 j = JSON.parse(payload);

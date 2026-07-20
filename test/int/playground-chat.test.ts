@@ -67,6 +67,39 @@ describe("playground chat", () => {
     expect((await onRequestPost(ctx2)).status).toBe(403);
   });
 
+  // 快速路徑（lib/fastsse.ts）用正則抽出「還沒反跳脫的原始字串」再交給 JSON.parse，
+  // 跳脫字元是它最容易出錯的地方 — 這裡端到端驗一次：SSE 事件與 D1 都要逐字正確。
+  it("跳脫字元端到端：換行／引號／反斜線／emoji 都要原樣送達並存進 D1", async () => {
+    const user = await seedUser({ status: "approved", services: "playground" });
+    await seedChannel({ slug: "pg", kind: "openai", base_url: UP, models: "gpt-t" });
+    const parts = ['第一行\n第二行 "引號"', " 反斜線\\ 與 tab\t", "emoji😀 結束"];
+    fetchMock
+      .get(UP)
+      .intercept({ path: "/v1/chat/completions", method: "POST" })
+      .reply(200, openaiSSE(parts), { headers: { "content-type": "text/event-stream" } });
+
+    const ctx = await chatCtx(user, {
+      channel: "pg",
+      model: "gpt-t",
+      messages: [{ role: "user", content: "來點特殊字元" }]
+    });
+    const resp = await onRequestPost(ctx);
+    const events = sseEvents(await readAll(resp));
+    await drainWaits(ctx);
+
+    const want = parts.join("");
+    expect(
+      events
+        .filter((e: any) => e.d)
+        .map((e: any) => e.d)
+        .join("")
+    ).toBe(want);
+    const msgs = await env.DB.prepare("SELECT content FROM pg_messages WHERE conv_id=?1 AND role='assistant'")
+      .bind(events[0].conv)
+      .all();
+    expect(msgs.results[0].content).toBe(want);
+  });
+
   it("快樂路徑：SSE 串流→統一事件→存 D1（新對話＋user＋assistant）", async () => {
     const user = await seedUser({ status: "approved", services: "playground" });
     await seedChannel({ slug: "pg", kind: "openai", base_url: UP, models: "gpt-t" });
