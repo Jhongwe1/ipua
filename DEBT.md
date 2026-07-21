@@ -21,3 +21,21 @@
 | 15 | **按「停止」也會在背景把回覆跑完**（ADR-0012） | 伺服器端「關網頁」與「按停止」都只是 fetch 被中止，分不出來；先讓「關網頁看得到完整回覆」這個主要需求成立 | 會員反映「停止後歷史卻是完整回覆」→ 前端送一個明示的中止訊號（新端點＋ADR-0010 的三處文件同步） |
 | 16 | **斷線後長回覆仍會被截斷（約 25 秒生成時間為限）**（ADR-0012） | 30 秒天花板是平台限制、參數調不動（已實測：`waitUntil() tasks did not complete within the allowed time`）；`BG.ckMs=3s` 已讓被砍時最多損失 3 秒的字 | 會員實際抱怨長回覆存不完整 → 升 Workers Paid，或把生成搬進 Durable Object（ADR-0007 已有依賴）自己管生命週期 |
 | 17 | **`request.signal` 掛著但實測不會觸發**（ADR-0012） | 成本趨近於零，Cloudflare 哪天補上就自動變快路徑（省下 `hangMs` 那 5 秒＝回覆多存幾百字） | 定期回測；**若確認永遠不會有，就直接刪掉**——但絕不能因此拿掉 `hangMs`，那會讓死鎖原封不動回來 |
+
+## 2026-07-22 稽核後新增（v2.1.0）
+
+這一批的共同點是：**現在都還沒真的出事**，寫下來是為了讓「什麼時候該處理」有客觀依據，
+而不是等到出事才回頭找理由。
+
+| # | 債 | 為何先欠 | 還債門檻 |
+|---|---|---|---|
+| 18 | **`visits`／`errlog` 無保留策略** | `req_log` 與 `pg_messages` 都有 cron 輪替了，這兩張沒有；但目前約 123 次瀏覽／天，一年才 45k 列，離問題很遠 | 任一表破 50 萬列 |
+| 19 | **`backupToR2` 把整庫累積成單一記憶體字串**（`cron.ts:119-139`） | isolate 上限 128 MB，現在的資料量連零頭都不到；改成串流寫入要拆掉整段邏輯 | 單次備份輸出破 20 MB |
+| 20 | **R2 備份含明文機密** —— `BACKUP_TABLES` 對 `relay_channels`／`users`／`settings`／`vpn_channels` 都用 `cols:"*"`，所以每日 JSONL 含上游明文 API key、TG bot token、全體會員 VPN token，保留 14 份 | 金鑰本來就得明文存 D1 才能轉發（ADR-0003），備份含它不是 bug；`media.data` 有為 CPU 細心排除，機密則是**從沒被考慮過** | 有第二個人拿到 R2 讀權限。（或更早：實作「備份時遮罩機密欄位」——代價是備份不再能直接還原成可用系統） |
+| 21 | **`vpn_token` 明文存**（`0001_baseline.sql:103`） | 同一張表的 `sessions.sid` 與 `api_key_hash` 都雜湊了，schema 註解還寫了理由；`vpn_token` 同樣是 bearer credential 卻是明文。查詢是精確比對，改雜湊完全可行、索引照用 | 下次動到 `users` 表的 migration 時順手改。**配上 #20，一份 R2 備份 ＝ 全體會員的 VPN 訂閱** |
+| 22 | **`relay` 路徑片段未拒 `.`／`..`** | `encodeURIComponent` 不轉義 `.`，但 host 不可控、只在已授權上游內，打不到別的地方 | 出現帶路徑前綴的 `base_url` 渠道（例 `https://x.com/api/v1`），那時 `..` 就能往上跳出前綴 |
+| 23 | **`site.ts` brand 內插未擋 `</script>`** | brand 只有管理員設得了，而管理員本來就能發 HTML 文章 | brand 改為非管理員可設 |
+| 24 | **配額在本地驗證前消耗**（`chat.ts:67`） | **對稱取捨不是 bug**：先扣才不會被無效請求洗掉限流 | 出現「會員因無效請求燒光配額」的實際回報 |
+| 25 | **`custom` 渠道的 `tokens_in/out` 永遠是 NULL** —— DEBT #7 決定不加 `stream_options.include_usage`，副作用是 **Phase J 的成本報表對 `custom` 渠道靜默失準**（#7 只記了原因，沒記這個後果） | 目前 custom 渠道流量為零 | 出現以 `custom` 為主力的流量，或成本報表被實際拿來做決策 |
+| 26 | **`relay` 在 `ch.api_key` 為空時不帶授權標頭轉發**（`[[path]].ts:101`） | playground 有擋（`chat.ts:146`），relay 沒有 —— 會員收到的是上游的原始 401 而不是清楚的錯誤 | 有人真的建了空金鑰渠道並回報「錯誤訊息看不懂」 |
+| 27 | **id_token 只驗 `aud` 與 `sub`，未驗 `iss`／`exp`；`email_verified` 用 `=== false`（缺該欄位會通過）**（`callback.ts:91-97`） | **取捨成立**：token 直接來自 Google token endpoint over TLS，符合 OIDC Core §3.1.3.7，不需要驗簽 | `iss === "https://accounts.google.com"` 與 `!== true` 各是一行的縱深防禦，**下次動到 `callback.ts` 時順手加** |

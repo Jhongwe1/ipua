@@ -100,6 +100,74 @@ Secrets: GOOGLE_CLIENT_ID/SECRET, ADMIN_EMAILS, LOGS_TOKEN (wrangler secrets)
 - Upstream providers see relayed request contents (inherent to a relay).
 - Single D1 region; availability bound to Cloudflare.
 
+## 4. Known accepted risks — stated, not fixed (2026-07-22)
+
+The list above is the short form. These four are written out because each is a real
+weakness that a reader could find, and "we didn't notice" and "we decided" look identical
+from the outside unless the decision is written down. Each says what is traded for what,
+and **what would change the decision** — a risk without a reversal condition is just an
+excuse.
+
+### 4.1 `goodOrigin` accepts a localhost `Origin` on the production site
+
+`auth.ts:237` allows `http://localhost:*` and `http://127.0.0.1:*` as CSRF origins
+regardless of the deployment. `test/unit/auth.test.ts` pins this as intended, so it is a
+decision, not an accident.
+
+**The risk is real but narrow**: an attacker must get a logged-in *admin* to load a page
+they control **on the admin's own loopback interface** — a local dev server, a running
+Electron app, a locally-served HTML file with a listener. That is a meaningfully harder
+precondition than a normal CSRF, but it is not impossible for a developer's machine, which
+is exactly the population that has admin cookies here.
+
+**What it buys**: developing against the production API from `wrangler dev` without
+maintaining a second origin allowlist.
+**Not fixed because** the maintainer is the only admin and does that regularly.
+**Reversal condition**: a second admin account exists, or admin cookies are ever held by
+someone who is not the developer. At that point the loopback exception should be gated on
+`isDevEnv(env)` like the `adminOk` bypass already is (see §4.4).
+
+### 4.2 Daily R2 backups contain plaintext secrets
+
+`cron.ts:91-108` backs up `relay_channels`, `users`, `settings` and `vpn_channels` with
+`cols: "*"`. So each daily JSONL contains **upstream API keys in plaintext, the Telegram
+bot token, and every member's VPN token** — and 14 copies are retained.
+
+**This is not a code bug.** The keys must be plaintext in D1 for the relay to forward at
+all (ADR-0003), so a faithful backup necessarily contains them. What makes it worth
+recording is the *blast-radius shift*: `media.data` was carefully excluded for CPU
+reasons, which shows the column list was thought about — but only for size, never for
+sensitivity. The result is 14 rolling copies of every credential in the system sitting in
+a **different storage product with a different access-control surface** from the one the
+threat model actually reasons about.
+
+**Reversal condition**: anyone other than the maintainer gains R2 read access. The cheaper
+partial fix — redacting secret columns at backup time — has a real cost: the backup stops
+being restorable into a working system, which is most of why it exists. (DEBT #20)
+
+### 4.3 `vpn_token` is stored in plaintext
+
+`0001_baseline.sql:103`. In the same table, `sessions.sid` and `api_key_hash` are both
+hashed, and the schema comment explains why. `vpn_token` is equally a bearer credential
+and is not. Lookups are exact-match, so hashing works with no query changes and the index
+still applies — this is cheap, it simply hasn't been done.
+
+**Combined with §4.2, one R2 backup is every member's VPN subscription.** That
+combination, not either item alone, is the reason both are written here.
+**Reversal condition**: the next migration that touches `users` (DEBT #21).
+
+### 4.4 Correction to §2.4 — path re-encoding is not traversal protection
+
+§2.4 claims path segments are "re-encoded (`encodeURIComponent`)" as a tampering
+mitigation. That is **imprecise as stated**: `encodeURIComponent` does not escape `.`, so
+`.` and `..` survive re-encoding (`relay/[[path]].ts:83-86`).
+
+It is not currently exploitable — the host comes from the admin-configured `base_url` and
+is never user-controlled, so the worst case is reaching a different path *on an upstream
+the admin already authorized*. It becomes a real issue the moment a channel's `base_url`
+carries a path prefix (`https://host/api/v1`), because `..` could then climb out of that
+prefix. Tracked as DEBT #22; the fix is to reject segments equal to `.` or `..`.
+
 ---
 
 # 繁體中文版
@@ -166,3 +234,40 @@ fail-open 刻意相反。對話與記帳都掛在永遠無法登入的 `demo:pub
 ## 明知且接受的風險
 Cloudflare 預設之外無 WAF／bot 管理；VPN token 網址可能被偷看（可重生）；
 中轉內容上游必然看得到（中轉的本質）；D1 單區域，可用性綁 Cloudflare。
+
+## 明知且接受的風險（2026-07-22 展開版）
+
+上面那段是短版。下面四條特別寫開，因為每一條都是讀者找得到的真實弱點，而
+**「沒注意到」跟「想過之後決定不修」從外面看起來一模一樣**——除非決策被寫下來。
+每條都寫清楚拿什麼換什麼，以及**什麼情況會改變這個決定**：沒有反轉條件的風險評估只是藉口。
+
+**① `goodOrigin` 在正式站放行 localhost Origin**（`auth.ts:237`，`test/unit/auth.test.ts`
+記錄了這是刻意的）。風險真實但很窄：攻擊者得讓**已登入的管理員**在自己的迴環介面上載入
+他控制的頁面（本機開發伺服器、Electron App、自己起的 listener）。這個前提比一般 CSRF
+難得多，但對開發者的機器不是不可能——而那正好就是持有管理員 cookie 的族群。
+換到的是：能從 `wrangler dev` 直接打正式 API，不必再維護第二份 origin 白名單。
+**反轉條件**：出現第二個管理員帳號，或管理員 cookie 落在開發者以外的人手上——
+屆時這條例外應該比照 `adminOk` 改成閘在 `isDevEnv(env)`（見 ④）。
+
+**② 每日 R2 備份含明文機密**（`cron.ts:91-108`）：`relay_channels`／`users`／`settings`／
+`vpn_channels` 都用 `cols:"*"`，所以每份日備份含**上游明文 API key、TG bot token、
+全體會員的 VPN token**，而且保留 14 份。**這不是 code bug**——金鑰本來就得明文存 D1 才能
+轉發（ADR-0003），忠實的備份必然含它。值得記下來的是**爆炸半徑的位移**：`media.data`
+為了 CPU 被細心排除，代表欄位清單是想過的——但只想了大小，沒想過敏感度。結果是
+14 份滾動副本躺在**另一個存取控制面完全不同的儲存系統**裡，而威脅模型推理的並不是那一個。
+**反轉條件**：維護者以外的人拿到 R2 讀權限。比較便宜的半套修法（備份時遮罩機密欄位）
+有真實代價：備份會不再能直接還原成可用系統，而那正是備份存在的大半理由。（DEBT #20）
+
+**③ `vpn_token` 明文存**（`0001_baseline.sql:103`）：同一張表的 `sessions.sid` 與
+`api_key_hash` 都雜湊了，schema 註解還寫了理由；`vpn_token` 同樣是 bearer credential
+卻是明文。查詢是精確比對，改雜湊不必動查詢、索引照用——便宜，只是一直沒做。
+**配上 ②，一份 R2 備份 ＝ 全體會員的 VPN 訂閱**；是這個組合、而不是單獨任一條，
+讓兩者都被寫進來。**反轉條件**：下一次動到 `users` 表的 migration（DEBT #21）。
+
+**④ 更正 §2.4——路徑重新編碼不等於防 traversal**：§2.4 把「path 片段重新編碼
+（`encodeURIComponent`）」寫成防篡改手段，**這個說法不精確**：`encodeURIComponent`
+不轉義 `.`，所以 `.` 與 `..` 原封不動地通過（`relay/[[path]].ts:83-86`）。
+目前打不到——host 來自管理員設定的 `base_url`、使用者控制不了，最糟也只是打到
+「管理員已經授權的那個上游」的別條路徑。但只要有渠道的 `base_url` 帶了路徑前綴
+（`https://host/api/v1`），`..` 就能爬出那個前綴。記在 DEBT #22；修法是直接拒收
+等於 `.` 或 `..` 的片段。
