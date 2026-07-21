@@ -10,7 +10,7 @@ import { onRequestGet as whoami } from "../../src/routes/api/whoami.js";
 import { onRequestGet as menu } from "../../src/routes/api/menu.js";
 import { onRequestGet as articleApi } from "../../src/routes/api/articles/[id].js";
 import { onRequestGet as pageApi } from "../../src/routes/api/pages/[slug].js";
-import { makeCtx, ORIGIN } from "../helpers.js";
+import { makeCtx, drainWaits, ORIGIN } from "../helpers.js";
 
 async function pubArticle(over?: Record<string, unknown>) {
   const now = new Date().toISOString();
@@ -74,12 +74,18 @@ describe("/img/<id>", () => {
       .bind(data.length, data, new Date().toISOString())
       .run();
     const id = ins.meta.last_row_id;
-    const r = await img(makeCtx({ url: ORIGIN + "/img/" + id, params: { id: String(id) } }));
+    // ctx 要留著：這支路由把 caches.default.put() 掛在 waitUntil 背景寫入，
+    // 不等它寫完就結束測試，vitest-pool-workers 收隔離儲存時會撞上還在寫的 Cache
+    //（"unable to pop Cache storage"，SQLite 的 -shm 檔還在）→ 整個 run 中斷。
+    // 這是競態：本機通常夠快而矇混過關，CI 機器一忙就翻車（2026-07-21 實際發生）。
+    const ctx = makeCtx({ url: ORIGIN + "/img/" + id, params: { id: String(id) } });
+    const r = await img(ctx);
     expect(r.status).toBe(200);
     expect(r.headers.get("content-type")).toBe("image/png");
     expect(r.headers.get("cache-control")).toContain("immutable");
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
     expect(new Uint8Array(await r.arrayBuffer())[1]).toBe(80);
+    await drainWaits(ctx);
   });
   it("不存在／壞 id：404", async () => {
     expect((await img(makeCtx({ url: ORIGIN + "/img/999999", params: { id: "999999" } }))).status).toBe(404);

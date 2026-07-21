@@ -47,7 +47,16 @@ export function makeCtx(opts?: MakeCtxOpts): TestCtx {
   };
 }
 
-// 等 waitUntil 收集到的背景工作全部結束（背景工作裡又掛新 waitUntil 也會等到）
+// 等 waitUntil 收集到的背景工作全部結束（背景工作裡又掛新 waitUntil 也會等到）。
+//
+// ⚠ 只要被測 handler 會註冊 waitUntil（背景寫 D1、寫 errlog、caches.default.put…），
+// 測試就**一定**要留住 ctx 並在結束前 drain。不 drain 不會當場失敗 —— 而是讓
+// vitest-pool-workers 回收隔離儲存時撞上「還在寫」的資源，報
+// "Failed to pop isolated storage stack frame / unable to pop Cache storage"
+// 並中斷整個 run，錯誤還會掛在**別的**測試名下，極難追。
+// 這是競態：本機通常夠快而矇混過關，CI 機器一忙就翻車（2026-07-21 被 /img 的
+// cache.put 咬過一次，見 test/int/public-read.test.ts）。
+// 所以別寫成 `await handler(makeCtx({…}))` —— 那樣就拿不到 ctx 可以 drain 了。
 export async function drainWaits(ctx: TestCtx): Promise<void> {
   let done = 0;
   while (ctx._waits.length > done) {

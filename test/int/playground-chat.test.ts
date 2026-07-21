@@ -343,7 +343,7 @@ describe("playground chat", () => {
         model: "glm-t",
         messages: [{ role: "user", content: "思考到一半關掉分頁" }]
       });
-      await onRequestPost(ctx); // 關鍵：完全不碰 resp.body —— 不讀、不取消，就像關掉的分頁
+      const resp = await onRequestPost(ctx); // 關鍵：完全不碰 resp.body —— 不讀、不取消，就像關掉的分頁
       await drainWaits(ctx);
 
       const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE user_id=?1")
@@ -356,6 +356,10 @@ describe("playground chat", () => {
         .all();
       expect(saved.results.length).toBe(1);
       expect(saved.results[0].content).toBe("完整的回覆");
+      // 斷言做完才收拾：這是全套唯一「故意留著沒人讀的串流」的測試，不收掉的話
+      // 那條 TransformStream 會讓 IoContext 一直活著，拖累後面測試的隔離儲存回收。
+      // 放在斷言之後，所以不會削弱「沒人讀也要跑完」這個被測性質。
+      await resp.body?.cancel().catch(() => {});
     } finally {
       BG.hangMs = prev;
     }
