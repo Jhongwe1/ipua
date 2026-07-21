@@ -69,6 +69,7 @@ Design decisions are recorded as ADRs — the honest trade-offs, not just the wi
 - [ADR-0009 Demo mode is fail-closed — the inverse of member quotas](./docs/adr/0009-demo-mode-fail-closed.md)
 - [ADR-0010 OpenAPI as a build artifact; public three-piece docs](./docs/adr/0010-openapi-three-piece-docs.md)
 - [ADR-0011 Staying on the free plan — the 10 ms CPU budget for streaming](./docs/adr/0011-streaming-cpu-budget.md)
+- [ADR-0012 Finishing the reply after the client disconnects](./docs/adr/0012-finish-reply-after-disconnect.md)
 
 Also: [Production report with real numbers](./docs/REPORT.md) ·
 [Threat model (STRIDE)](./docs/THREAT-MODEL.md) ·

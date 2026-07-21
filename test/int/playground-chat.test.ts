@@ -1,7 +1,7 @@
 // POST /api/playground/chat — SSE 快樂路徑、D1 持久化、錯誤淨化（會員看不到上游身分）。
 import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { env, fetchMock } from "cloudflare:test";
-import { onRequestPost } from "../../src/routes/api/playground/chat.js";
+import { onRequestPost, BG } from "../../src/routes/api/playground/chat.js";
 import { createSession } from "../../src/lib/auth.js";
 import {
   makeCtx,
@@ -199,6 +199,127 @@ describe("playground chat", () => {
     expect(err.error).toBe("empty-output");
     expect(err.hint).toContain("思考"); // 會員看得到成因，不是一句「發生錯誤」
     expect(events[events.length - 1].done).toBe(true);
+  });
+
+  // ── 斷線後的背景續跑（2026-07-21）──
+  // 舊行為：瀏覽器一斷線就掐斷上游。會員在模型「還在思考」時關掉網頁，正文一個字都還沒
+  // 生成 → D1 連 assistant 那列都沒有 → 下次打開對話是空的。現在改成背景讀完再存。
+  //
+  // 這三個測試都靠「不讀回應主體就 cancel」來模擬關網頁：TransformStream 的 readable
+  // 預設 highWaterMark 是 0，沒人讀就會卡住第一次寫入，所以 cancel() 必定在讀取上游的
+  // 迴圈開始前就讓 send() 失敗 —— 時序是確定的，不是碰運氣。
+  it("斷線後背景續跑：關網頁時還在思考，完整回覆仍然存進 D1", async () => {
+    const user = await seedUser({ status: "approved", services: "playground" });
+    await seedChannel({ slug: "pgbg", kind: "openai", base_url: UP, models: "glm-t" });
+    fetchMock
+      .get(UP)
+      .intercept({ path: "/v1/chat/completions", method: "POST" })
+      .reply(200, reasoningSSE(["先想一下"], ["完整", "的回覆"]), {
+        headers: { "content-type": "text/event-stream" }
+      });
+
+    const ctx = await chatCtx(user, {
+      channel: "pgbg",
+      model: "glm-t",
+      messages: [{ role: "user", content: "還在思考我就關掉網頁" }]
+    });
+    const resp = await onRequestPost(ctx);
+    await resp.body!.cancel(); // ← 使用者關掉網頁
+    await drainWaits(ctx);
+
+    const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE user_id=?1")
+      .bind(user.id)
+      .first<any>();
+    const saved = await env.DB.prepare(
+      "SELECT content FROM pg_messages WHERE conv_id=?1 AND role='assistant'"
+    )
+      .bind(conv.id)
+      .all();
+    // 舊行為只會存到斷線當下的「完整」；續跑之後連斷線後才生成的「的回覆」都在
+    expect(saved.results.length).toBe(1);
+    expect(saved.results[0].content).toBe("完整的回覆");
+  });
+
+  it("續跑期間的階段性存檔：同一列 UPDATE，不會變成好幾則回覆", async () => {
+    const prev = BG.ckMs;
+    BG.ckMs = 0; // 斷線後每筆增量都存一次（正常是 5 秒一次）
+    try {
+      const user = await seedUser({ status: "approved", services: "playground" });
+      await seedChannel({ slug: "pgck", kind: "openai", base_url: UP, models: "glm-t" });
+      fetchMock
+        .get(UP)
+        .intercept({ path: "/v1/chat/completions", method: "POST" })
+        .reply(200, reasoningSSE(["思考中"], ["一", "二", "三"]), {
+          headers: { "content-type": "text/event-stream" }
+        });
+
+      const ctx = await chatCtx(user, {
+        channel: "pgck",
+        model: "glm-t",
+        messages: [{ role: "user", content: "數數" }]
+      });
+      const resp = await onRequestPost(ctx);
+      await resp.body!.cancel();
+      await drainWaits(ctx);
+
+      const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE user_id=?1")
+        .bind(user.id)
+        .first<any>();
+      const saved = await env.DB.prepare(
+        "SELECT content FROM pg_messages WHERE conv_id=?1 AND role='assistant'"
+      )
+        .bind(conv.id)
+        .all();
+      expect(saved.results.length).toBe(1); // 存了三次，但始終只有一列
+      expect(saved.results[0].content).toBe("一二三");
+    } finally {
+      BG.ckMs = prev;
+    }
+  });
+
+  it("續跑有時間上限：預算用完就收工，不會一直讀到 isolate 被拔電源", async () => {
+    const prev = BG.budgetMs;
+    BG.budgetMs = 0; // 逼出極端情況：斷線後第一次檢查就收工＝完全不續跑（等同舊行為）
+    try {
+      const user = await seedUser({ status: "approved", services: "playground" });
+      await seedChannel({ slug: "pgbd", kind: "openai", base_url: UP, models: "glm-t" });
+      fetchMock
+        .get(UP)
+        .intercept({ path: "/v1/chat/completions", method: "POST" })
+        .reply(200, reasoningSSE(["思考中"], ["一", "二", "三"]), {
+          headers: { "content-type": "text/event-stream" }
+        });
+
+      const ctx = await chatCtx(user, {
+        channel: "pgbd",
+        model: "glm-t",
+        messages: [{ role: "user", content: "數數" }]
+      });
+      const resp = await onRequestPost(ctx);
+      await resp.body!.cancel();
+      await drainWaits(ctx); // 會結束＝預算真的讓迴圈停下來了
+
+      const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE user_id=?1")
+        .bind(user.id)
+        .first<any>();
+      const saved = await env.DB.prepare(
+        "SELECT content FROM pg_messages WHERE conv_id=?1 AND role='assistant'"
+      )
+        .bind(conv.id)
+        .all();
+      // 預算 0＝一斷線就停，正文還沒生成 → 沒有 assistant 列。
+      // 這正是預設值不能設 0 的原因，也證明上限是真的生效的那道閘。
+      expect(saved.results.length).toBe(0);
+      // user 訊息不受影響 — 問過的問題永遠存得住
+      const u = await env.DB.prepare(
+        "SELECT COUNT(*) c FROM pg_messages WHERE conv_id=?1 AND role='user'"
+      )
+        .bind(conv.id)
+        .first<any>();
+      expect(u.c).toBe(1);
+    } finally {
+      BG.budgetMs = prev;
+    }
   });
 
   it("模型不在渠道清單 → 400；渠道不存在 → 404", async () => {

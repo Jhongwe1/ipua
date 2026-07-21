@@ -3,7 +3,8 @@
 //
 // 流程：驗身分（cookie 或管理員金鑰）→ 查渠道與模型 → 沒帶 conv_id 就自動開新對話
 // → 存 user 訊息 → 帶上游金鑰打上游（串流）→ 轉成統一 SSE 回瀏覽器
-// → 串完（或會員按停止）把 assistant 回覆存進 D1。
+// → 串完把 assistant 回覆存進 D1。
+// 瀏覽器中途斷線（關網頁／按停止）不會中斷生成 — 背景繼續讀完再存，見下方 BG。
 //
 // 回給瀏覽器的 SSE 事件（每筆都是 data: JSON）：
 //   { conv, title? }   一開始先告訴前端對話編號（新對話附自動取的標題）
@@ -42,6 +43,23 @@ function safeHint(status: number): string {
   if (status >= 500) return "上游暫時故障，請稍後再試";
   return "上游回應異常（HTTP " + status + "）";
 }
+
+// ── 斷線後的「背景續跑」預算（2026-07-21）──
+// 舊行為是瀏覽器一斷線就掐斷上游，只存得到已生成的半截；會員若在模型「還在思考」時
+// 關掉網頁，正文一個字都還沒出來，D1 連 assistant 那一列都不會有 —— 回來看是空的。
+// 現在改成背景繼續讀完再存，但必須有上限：
+//
+// budgetMs — waitUntil 的 30 秒是從「回應主體結束」起算（ADR-0011 診斷手冊第 1 條），
+//   而瀏覽器一關，主體就結束了 → 倒數開始。若一路讀到超過 30 秒，isolate 會被拔電源，
+//   那是連 D1 都寫不進去的死法，比舊行為還糟。所以時間到就主動收工把當下有的存進去，
+//   最壞情況等於舊行為，不會更差。
+//   20 秒的來源：req_log 實測整趟平均 11.4 秒（最長 75.1 秒），而斷線多半發生在中途、
+//   剩餘時間更短 —— 20 秒足夠讓絕大多數回覆完整跑完，又留 10 秒給最後那次 D1 batch。
+// ckMs — 續跑期間每隔這麼久把已生成內容存一次（同一列 UPDATE）。萬一 30 秒的前提是錯的、
+//   真的提早被拔電源，至少留得住進度，不會整趟蒸發。
+//
+// 用可變物件而不是 const：測試要能改小值驗證這兩條路徑（見 playground-chat.test.ts）。
+export const BG = { budgetMs: 20000, ckMs: 5000 };
 
 export async function onRequestPost(context: RouteCtx): Promise<Response> {
   const { request, env } = context;
@@ -209,11 +227,15 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   const ts = new TransformStream();
   const writer = ts.writable.getWriter();
   const enc = new TextEncoder();
-  let gone = false; // 瀏覽器斷線／按停止 → 寫入會失敗 → 停止抓上游、保留已生成內容
+  // 瀏覽器斷線／按停止 → 往串流寫入會失敗。從那一刻起沒有人在看，但上游還在生成，
+  // 所以不掐斷、繼續在背景讀完（見 BG）— 會員關掉網頁回來仍看得到完整回覆。
+  let gone = false,
+    goneAt = 0; // 斷線時刻 — 續跑預算從這裡起算
   function send(obj: unknown) {
     if (gone) return Promise.resolve();
     return writer.write(enc.encode("data: " + JSON.stringify(obj) + "\n\n")).catch(function () {
       gone = true;
+      goneAt = Date.now();
     });
   }
   const ct = String(resp.headers.get("content-type") || "");
@@ -246,6 +268,9 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
       }
       // 思考與正文分開累積，型別一換就先送出 — 兩者的先後順序不會被打亂
       async function push(kind: "r" | "d", text: string) {
+        // 斷線後沒有人在看：輸出側（stringify＋編碼＋寫串流）整個省掉。
+        // 所以「背景續跑」花的 CPU 一定比「會員看著跑完」少，不會多出撞 10ms 上限的風險。
+        if (gone) return;
         if (pendKind !== kind) {
           await flush();
           pendKind = kind;
@@ -254,6 +279,42 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
         // 100ms／1000 字：約每秒 10 次更新，肉眼仍是流暢的逐字浮現，
         // 但送出次數比逐筆轉推少一個數量級 — 長回覆才不會把 CPU 額度用完。
         if (pend.length >= 1000 || Date.now() - lastFlush >= 100) await flush();
+      }
+
+      // ── 斷線後的續跑控制 ──
+      let asstId: number | null = null, // 續跑期間存下的 assistant 列（之後都改 UPDATE 同一列）
+        // 上次階段性存檔時距離斷線過了多久。初值取負的一個間隔＝斷線後只要有內容就「立刻」
+        // 先存一次，之後才進入每 ckMs 一次的節奏。這一步是「最壞情況不比舊行為差」的關鍵：
+        // 舊行為是斷線就馬上存，若第一次存檔要等 5 秒，而 isolate 在第 3 秒被拔電源，
+        // 新版反而會丟掉舊版存得到的內容 —— 那是倒退，不是取捨。
+        lastCk = -BG.ckMs;
+      // 續跑期間把已生成內容存一次；失敗就算了（收尾時還會再存一次，這裡只是保險）
+      async function checkpoint() {
+        try {
+          if (asstId) {
+            await env.DB.prepare("UPDATE pg_messages SET content=?1 WHERE id=?2").bind(full, asstId).run();
+          } else {
+            const r = await env.DB.prepare(
+              "INSERT INTO pg_messages (conv_id,role,content,model,created_at) VALUES (?1,'assistant',?2,?3,?4)"
+            )
+              .bind(convId, full, v.model, new Date().toISOString())
+              .run();
+            asstId = r.meta.last_row_id as number;
+          }
+        } catch (e) {}
+      }
+      // 回 true＝該收工了（預算用完）。呼叫端一律寫成 `gone && (await bgStop())`：
+      // 沒斷線時被 && 短路，連 promise 都不會配置 —— ADR-0011 的鐵則是
+      // 串流迴圈裡的每一行都會跑上千次，常態路徑一微秒都不能多花。
+      async function bgStop(): Promise<boolean> {
+        if (!gone) return false;
+        const el = Date.now() - goneAt;
+        if (el >= BG.budgetMs) return true;
+        if (full && el - lastCk >= BG.ckMs) {
+          lastCk = el;
+          await checkpoint();
+        }
+        return false;
       }
       try {
         // demo 也拿得到對話編號（前端靠它把同一頁的後續訊息串成同一則對話），
@@ -303,7 +364,7 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
                     full += fast.d;
                     await push("d", fast.d);
                   }
-                  if (gone) break readLoop;
+                  if (gone && (await bgStop())) break readLoop;
                   continue;
                 }
               }
@@ -332,7 +393,7 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
                 full += t;
                 await push("d", t);
               }
-              if (gone) break readLoop;
+              if (gone && (await bgStop())) break readLoop;
             }
           }
           await flush(); // 收尾：把還沒滿門檻的殘量送出去
@@ -353,12 +414,15 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
       // 以前這裡直接送 done，會員看到的就是「沒回覆、沒報錯、就這樣沒了」。
       // 會員自己按停止（gone）不算異常。
       if (!full && !errMsg && !gone) emptyOut = true;
-      // 存回 D1（部分回應也存 — 按「停止」時已生成的內容留著）。
+      // 存回 D1（部分回應也存 — 續跑預算用完、或上游中途出錯時，已生成的內容都留著）。
       // demo 的對話同樣落地：管理員要在 /logs 看得到匿名試聊聊了什麼。
       try {
         const t2 = new Date().toISOString();
         const stmts: D1PreparedStatement[] = [];
-        if (full) {
+        if (asstId) {
+          // 續跑期間已經存過 → 補成最終內容（同一列，不會變成兩則回覆）
+          stmts.push(env.DB.prepare("UPDATE pg_messages SET content=?1 WHERE id=?2").bind(full, asstId));
+        } else if (full) {
           stmts.push(
             env.DB.prepare(
               "INSERT INTO pg_messages (conv_id,role,content,model,created_at) VALUES (?1,'assistant',?2,?3,?4)"

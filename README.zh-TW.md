@@ -67,6 +67,7 @@ flowchart LR
 - [ADR-0009 體驗模式 fail-closed — 與會員配額刻意相反](./docs/adr/0009-demo-mode-fail-closed.md)
 - [ADR-0010 OpenAPI 是建置產物；文件公開三件套](./docs/adr/0010-openapi-three-piece-docs.md)
 - [ADR-0011 為了續用免費方案 — 串流的 10ms CPU 預算](./docs/adr/0011-streaming-cpu-budget.md)
+- [ADR-0012 斷線後把回覆跑完再存](./docs/adr/0012-finish-reply-after-disconnect.md)
 
 另見：[真實數據報告](./docs/REPORT.md) · [威脅模型（STRIDE）](./docs/THREAT-MODEL.md) ·
 [與 one-api／LiteLLM／OpenRouter／AI Gateway 的誠實對照](./docs/COMPARISON.md) ·
