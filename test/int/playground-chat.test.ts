@@ -322,6 +322,47 @@ describe("playground chat", () => {
     }
   });
 
+  // 2026-07-21 線上實測抓到的真正死因，也是上面那些 cancel() 測試漏掉的情境：
+  // 關掉分頁後 Cloudflare **不會**取消回應串流，只是再也沒有人讀 → 背壓不解除 →
+  // writer.write() 既不 resolve 也不 reject。舊寫法卡在 await，整個請求被判定
+  // hung 而 canceled，D1／req_log／errlog 全部陪葬（wrangler tail 才看得到）。
+  // 所以這裡故意「不讀也不取消」—— 沒有死鎖斷路器的話，drainWaits 會等到天荒地老。
+  it("沒人讀也沒人取消（線上真實情境）：寫入卡死不會拖垮整趟，回覆照樣完整存進 D1", async () => {
+    const prev = BG.hangMs;
+    BG.hangMs = 50; // 正式值 5 秒，測試縮短
+    try {
+      const user = await seedUser({ status: "approved", services: "playground" });
+      await seedChannel({ slug: "pghang", kind: "openai", base_url: UP, models: "glm-t" });
+      fetchMock
+        .get(UP)
+        .intercept({ path: "/v1/chat/completions", method: "POST" })
+        .reply(200, reasoningSSE(["想很久"], ["完整", "的回覆"]), {
+          headers: { "content-type": "text/event-stream" }
+        });
+
+      const ctx = await chatCtx(user, {
+        channel: "pghang",
+        model: "glm-t",
+        messages: [{ role: "user", content: "思考到一半關掉分頁" }]
+      });
+      await onRequestPost(ctx); // 關鍵：完全不碰 resp.body —— 不讀、不取消，就像關掉的分頁
+      await drainWaits(ctx);
+
+      const conv = await env.DB.prepare("SELECT id FROM pg_conversations WHERE user_id=?1")
+        .bind(user.id)
+        .first<any>();
+      const saved = await env.DB.prepare(
+        "SELECT content FROM pg_messages WHERE conv_id=?1 AND role='assistant'"
+      )
+        .bind(conv.id)
+        .all();
+      expect(saved.results.length).toBe(1);
+      expect(saved.results[0].content).toBe("完整的回覆");
+    } finally {
+      BG.hangMs = prev;
+    }
+  });
+
   it("模型不在渠道清單 → 400；渠道不存在 → 404", async () => {
     const user = await seedUser({ status: "approved", services: "playground" });
     await seedChannel({ slug: "pg2", models: "only-this" });

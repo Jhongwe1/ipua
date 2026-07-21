@@ -5,117 +5,153 @@
 ## Context
 
 `POST /api/playground/chat` accumulates the assistant reply in memory and writes it to D1
-**once, after the stream loop ends**. Nothing is persisted mid-flight.
+**once, after the stream loop ends**. Nothing is persisted mid-flight, so anything that kills
+the request before that write loses the entire reply.
 
-Until now a browser disconnect (closing the tab, or the stop button) set `gone`, broke the
-read loop and cancelled the upstream, saving whatever had accumulated. For a member who
-closes the page **while a reasoning model is still thinking**, that is not a truncated
-reply — it is **no reply at all**: `full` is still empty, so `if (full)` skips the INSERT
-entirely and the conversation contains the question and nothing else.
+A member reported: ask a question, close the tab while the reasoning model is still thinking,
+come back — the conversation contains the question and nothing else. Reasoning traffic makes
+this the common case, not a corner case: the GLM-4.7 sample in ADR-0011 emitted **691 deltas
+of which 627 were `reasoning_content`** (946 characters of thinking against 79 of answer).
+The thinking phase is both the longest part of the wait and the part that persists nothing —
+exactly when a member gives up and closes the tab.
 
-Reasoning traffic makes this the common case rather than the corner case. The GLM-4.7
-sample measured in ADR-0011 emitted **691 deltas, of which 627 were `reasoning_content`**
-(946 characters of thinking against 79 of answer). The thinking phase is both the longest
-part of the wait and the part that persists nothing — exactly when a member gives up and
-closes the tab.
+The code *appeared* to handle this. `send()` caught write failures and set a `gone` flag that
+broke the read loop and saved the partial reply. **That mechanism never worked**, and the
+first attempt at this ADR was written on top of the same wrong assumption.
+
+### What actually happens (measured, not reasoned)
+
+When the client disconnects, **Cloudflare does not cancel the response stream**. Nobody reads
+the readable end, backpressure never clears, and `writer.write()` **neither resolves nor
+rejects — it never returns**. The loop parks on `await`, `gone` is never set, and the runtime
+eventually kills the request:
+
+```
+outcome = canceled
+Error: The Workers runtime canceled this request because it detected that your
+       Worker's code had hung and would never generate a response.
+```
+
+Same power-cut as an ADR-0011 CPU overrun: the D1 batch, `req_log` and `errlog` all die with
+it, so nothing in the application's own records shows the failure. Only `wrangler tail` sees
+it. Reproduced live: conversation 180 has the user row and no assistant row.
+
+Three live runs on the deployed Worker, disconnecting ~2 s in:
+
+| Run | Config | Result |
+|-----|--------|--------|
+| conv 180 | before fix | `canceled` (hung), **nothing saved** |
+| conv 181 | hang guard + 20 s budget | clean finish at D+27 s, 678 chars, `req_log` written |
+| conv 182 | hang guard + 120 s budget | `canceled` at the ceiling, **1798 chars saved by checkpoints**, no `req_log` |
+
+`request.signal` is present on the incoming Request and its `abort` event **never fires** —
+instrumented in production, only the write-timeout probe ever printed. It cannot be the
+detector.
+
+The ceiling is real and its message is distinct from the hang:
+
+```
+waitUntil() tasks did not complete within the allowed time after invocation end
+and have been cancelled.
+```
+
+confirming ADR-0011's "30 s from when the response body ends" — and that a disconnect *is*
+the body ending.
 
 ## Decision
 
-**A disconnect no longer cancels generation.** The loop keeps reading inside `waitUntil`
-and persists the complete reply, bounded by two constants (`BG` in `chat.ts`).
+**Detect the disconnect with a write timeout, then keep reading in the background under a
+budget, checkpointing as we go.** Timeline, `D` = the moment the tab closes:
 
-### CPU is not the objection here
-
-The instinct after ADR-0011 is that reading a long reply to completion risks the 10 ms
-budget. It does not, because the write side is already conditional:
-
-```js
-function send(obj) { if (gone) return Promise.resolve(); … }
+```
+D+0     client gone; no notification, stream not cancelled
+D+5s    hangMs fires → treated as disconnected, budget starts
+D+25s   budgetMs expires → stop reading, save
+D+27s   final batch committed (assistant content + conversation + req_log)
+D+30s   ← ceiling: waitUntil cancelled
 ```
 
-Once `gone`, every `JSON.stringify`, `TextEncoder.encode` and stream write disappears, and
-`push()` early-returns so the accumulate/flush bookkeeping goes with it. **Finishing in the
-background is strictly cheaper in CPU than the same reply watched to the end.** The worst
-case for the budget is unchanged: a long reply with a member watching, which ADR-0011
-already sized for.
+- **`hangMs = 5000`** — a single write blocked this long means nobody is reading. Deliberately
+  *not* lowered: a genuinely connected client on a bad mobile link could stall one flush for a
+  few seconds, and a false positive freezes their live stream (the reply still lands in D1, so
+  a reload recovers it). Buying a few seconds of generation with the live-viewer experience is
+  a bad trade.
+- **`budgetMs = 20000`** — measured from detection, leaving ~3 s for the final batch inside the
+  ceiling. Not optional: the 120 s run proves an unbounded loop reaches the ceiling and loses
+  the whole final batch.
+- **`ckMs = 3000`** — the safety line for exactly that case. Conv 182 was killed with no final
+  batch and still kept 1798 characters purely from checkpoints. The interval is how many
+  seconds of text a kill can cost, hence 3 s. One row: `INSERT` once, then `UPDATE`. The first
+  checkpoint ignores the interval (`lastCk` starts at `-ckMs`) so content is durable from the
+  first delta after a disconnect.
 
-The new per-delta check is written `gone && (await bgStop())` so the common path costs one
-boolean and allocates no promise — ADR-0011's rule is that anything in this loop runs
-thousands of times.
+### CPU is not the constraint here
 
-### The real constraint is wall clock
-
-`waitUntil`'s 30 s begins when the **response body ends** (ADR-0011, playbook step 1) — and
-a disconnect ends it. Reading past that window gets the isolate killed, which is the same
-power-cut as a CPU overrun: the D1 write never happens. Unbounded continuation would
-therefore be **worse than doing nothing**, trading a partial reply for none at all.
-
-- **`budgetMs = 20000`** — measured `req_log` duration is **avg 11 452 ms, max 75 107 ms**
-  for the whole request, and a disconnect usually lands mid-reply so the remaining time is
-  shorter still. 20 s finishes the large majority and leaves 10 s of margin for the final
-  D1 batch. On exhaustion the loop breaks and saves what it has, so **the floor is the old
-  behaviour** — this change cannot lose data the previous one would have kept.
-- **`ckMs = 5000`** — the 30 s figure is *inferred* for the disconnect case: it was measured
-  on a stream that completed normally (69 s, client attached), not on a disconnect. A
-  checkpoint every 5 s of background time (one row: INSERT once, then UPDATE) caps the cost
-  of that inference being wrong at 5 s of text instead of the entire reply.
-  The **first** checkpoint is not on that schedule — `lastCk` starts at `-ckMs` so the first
-  content seen after a disconnect is written immediately. Without it the floor claim above
-  is false: the old code persisted at the moment of disconnect, so a kill at 3 s would have
-  lost text the old code kept. Starting the interval at zero would have made this a
-  regression rather than a trade-off.
+The instinct after ADR-0011 is that reading a long reply to completion risks the 10 ms budget.
+It does not: `send()` returns immediately once `gone`, and `push()` early-returns, so every
+`JSON.stringify`, `TextEncoder.encode` and stream write disappears. **Background completion is
+strictly cheaper in CPU than the same reply watched to the end** — the worst case for the
+budget is unchanged. The per-delta check is written `gone && (await bgStop())` so the common
+path costs one boolean and allocates no promise, per ADR-0011's rule.
 
 ## Rejected alternatives
 
-- **Unbounded continuation.** Simplest to write, but the power-cut mode makes it strictly
-  worse than the behaviour it replaces.
-- **Checkpoints only, no continuation.** Cheaper, and it does fix truncation — but not the
-  case that motivated this ADR: while the model is thinking there is nothing to checkpoint.
-- **Durable Object or Queues owning the generation.** The correct answer for arbitrary
-  durations, and DO is already a dependency (ADR-0007). Rejected as disproportionate: a new
-  persistence path and lifecycle against ADR-0002's single-D1 premise, to serve replies
-  that run more than 20 s past a disconnect.
-- **Workers Paid.** Raises the CPU ceiling, which is not what binds here.
+- **`request.signal` as the detector.** Measured dead (see above). Kept in the code as a
+  zero-cost fast path if Cloudflare ever delivers it, explicitly annotated so nobody removes
+  `hangMs` believing the signal works.
+- **Unbounded continuation.** Measured: reaches the ceiling, loses the final batch.
+- **Checkpoints only, no continuation.** Doesn't fix the motivating case — while the model is
+  thinking there is nothing to checkpoint.
+- **Durable Object or Queues owning the generation.** The correct answer for durations past
+  30 s, and DO is already a dependency (ADR-0007). Disproportionate here: a new persistence
+  path and lifecycle against ADR-0002's single-D1 premise.
 
 ## Consequences
 
-**Won**: closing the tab mid-thought now yields the complete answer on the next visit —
-the reason the conversation history exists at all.
+**Won**: closing the tab mid-thought now persists the reply instead of losing it entirely.
+Conv 180 (nothing) → conv 181 (678 chars, clean) / conv 182 (1798 chars via checkpoints).
 
 **Paid**:
 
-- **The stop button is indistinguishable from a page close** at the server: both are an
-  aborted fetch. Pressing stop now also finishes the reply in the background, so history
-  shows the complete answer while the on-screen bubble kept the truncated text. Recorded in
-  DEBT — an explicit abort signal is the fix, and it costs a new endpoint plus its
-  three-place doc sync (ADR-0010).
+- **Replies longer than ~25 s of post-disconnect generation are still truncated.** The 30 s
+  ceiling is a platform limit, not a tuning choice — the test prompt ("full pig-blood-cake
+  recipe") was still generating at 1798 characters. Recorded in DEBT; the real fixes are
+  Workers Paid or moving generation into a Durable Object.
+- **The stop button is indistinguishable from a page close** — both are just an aborted fetch,
+  and the disconnect is only detected by a timeout, so pressing stop also finishes the reply in
+  the background. Recorded in DEBT; fixing it needs an explicit abort signal from the frontend.
 - Upstream tokens are spent on replies nobody reads.
-- Replies still running 20 s after a disconnect are truncated, as before.
 
 ---
 
-**中文摘要**：以前瀏覽器一斷線就掐斷上游 —— 會員在**推理模型還在思考時**關掉網頁，正文
-一個字都還沒生成，`if (full)` 直接跳過 INSERT，D1 連 assistant 那列都沒有，下次打開只剩
-自己問的問題。而 ADR-0011 量到的 GLM-4.7 是 **691 筆增量裡 627 筆是思考**，思考階段既
-最久、又什麼都存不下 —— 正好是會員放棄等待的時刻，所以這是常態不是邊角。
+**中文摘要**：回覆是**整段收完才一次寫 D1**，中途什麼都不落地。會員在推理模型思考時關掉
+分頁，正文一個字都還沒生成 → D1 連 assistant 那列都沒有。而 ADR-0011 量到的 GLM-4.7 是
+**691 筆增量裡 627 筆是思考**，所以這是常態不是邊角。
 
-**改成：斷線不中斷生成，背景讀完再存。**
+**原本以為有處理，其實那套機制從來沒作用過**（本 ADR 第一版也是建立在同一個錯誤前提上）。
+實測真相：客戶端離線時 **Cloudflare 不會取消回應串流**，沒人讀 → 背壓不解除 →
+`writer.write()` 既不成功也不失敗，就是永遠不回來。程式卡在 `await`，最後整個請求被判定
+`code had hung and would never generate a response` 而 canceled ——
+D1、req_log、errlog 全部陪葬，站內零痕跡，**只有 `wrangler tail` 看得到**。
 
-CPU 不是這裡的阻力（這點與直覺相反）：`send()` 一開頭就是 `if (gone) return`，斷線後
-stringify、編碼、寫串流整組消失，`push()` 也直接 return —— **背景跑完花的 CPU 一定比
-「會員看著跑完」少**，ADR-0011 的最壞情況沒有變。迴圈裡寫成 `gone && (await bgStop())`，
-沒斷線時被短路，連 promise 都不配置。
+線上實測三次（都在 2 秒時斷線）：
 
-真正的牆是**時鐘不是 CPU**：`waitUntil` 的 30 秒從「回應主體結束」起算，而斷線就是結束。
-讀過頭 isolate 被拔電源，D1 一樣寫不進去 —— **無上限續跑會比原本更糟**（本來至少存得到半截）。
-所以 `budgetMs=20000`（實測整趟平均 11.4 秒／最長 75.1 秒，斷線多在中途、剩餘更短；
-留 10 秒給最後那次 batch），時間到就收工存檔，**最壞等於舊行為**。
-`ckMs=5000` 是對「30 秒」這個推論的保險 —— 那個數字是在**正常跑完**的串流上量到的，
-不是在斷線上，萬一前提錯了，損失從「整趟」變成「最後 5 秒」。
-但**第一次存檔不照這個間隔**：`lastCk` 初值設成 `-ckMs`，斷線後只要有內容就立刻先存一次。
-少了這一步，上面那句「最壞等於舊行為」就是假的 —— 舊行為是斷線當下就存，若第一次要等
-5 秒而 isolate 在第 3 秒被拔電源，新版反而丟掉舊版存得到的東西，那是倒退不是取捨。
+| 對話 | 設定 | 結果 |
+|---|---|---|
+| 180 | 修復前 | canceled（死鎖），**什麼都沒存** |
+| 181 | 逾時偵測＋20 秒預算 | D+27 秒乾淨收工，678 字，req_log 有 |
+| 182 | 逾時偵測＋120 秒預算 | 撞天花板被砍，**靠階段性存檔留下 1798 字**，req_log 沒有 |
 
-**代價**：伺服器分不出「關網頁」和「按停止」（都是 fetch 被中止），所以按停止也會在背景
-跑完，歷史紀錄會出現完整回覆、畫面上卻停在截斷處 —— 記進 DEBT。另外沒人看的回覆一樣要
-付上游 token。
+`request.signal` **實測不會觸發**（上探針到線上，只等到寫入逾時那一發），所以偵測只能靠
+**寫入逾時**。天花板也實測到了，訊息與死鎖那個不同：
+`waitUntil() tasks did not complete within the allowed time after invocation end`。
+
+**三個常數**（D＝關掉分頁的時刻）：`hangMs=5s` 判定斷線（刻意不再壓低，避免誤判爛網路的
+線上使用者）→ `budgetMs=20s` 收工 → D+27 秒收尾寫完 → D+30 秒天花板。
+`ckMs=3s` 是撞天花板時的保命索 —— 182 那次收尾完全沒跑，1798 字全靠它。
+
+**CPU 不是這裡的阻力**（與直覺相反）：`gone` 之後 `send()` 直接 return，stringify／編碼／
+寫串流整組消失，背景跑完比「會員看著跑完」還省。
+
+**沒解決的**：超過約 25 秒生成時間的長回覆仍會被截斷 —— 那是平台的 30 秒天花板，不是參數
+調得動的。真正的解是 Workers Paid 或把生成搬進 Durable Object，記在 DEBT。

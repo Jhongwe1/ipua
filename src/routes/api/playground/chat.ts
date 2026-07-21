@@ -49,17 +49,28 @@ function safeHint(status: number): string {
 // 關掉網頁，正文一個字都還沒出來，D1 連 assistant 那一列都不會有 —— 回來看是空的。
 // 現在改成背景繼續讀完再存，但必須有上限：
 //
-// budgetMs — waitUntil 的 30 秒是從「回應主體結束」起算（ADR-0011 診斷手冊第 1 條），
-//   而瀏覽器一關，主體就結束了 → 倒數開始。若一路讀到超過 30 秒，isolate 會被拔電源，
-//   那是連 D1 都寫不進去的死法，比舊行為還糟。所以時間到就主動收工把當下有的存進去，
-//   最壞情況等於舊行為，不會更差。
-//   20 秒的來源：req_log 實測整趟平均 11.4 秒（最長 75.1 秒），而斷線多半發生在中途、
-//   剩餘時間更短 —— 20 秒足夠讓絕大多數回覆完整跑完，又留 10 秒給最後那次 D1 batch。
-// ckMs — 續跑期間每隔這麼久把已生成內容存一次（同一列 UPDATE）。萬一 30 秒的前提是錯的、
-//   真的提早被拔電源，至少留得住進度，不會整趟蒸發。
+// 三個常數都是線上實測定出來的（2026-07-21，wrangler tail 加臨時探針），不是估的。
+// 時間軸以「使用者關掉分頁」那一刻為 D：
 //
-// 用可變物件而不是 const：測試要能改小值驗證這兩條路徑（見 playground-chat.test.ts）。
-export const BG = { budgetMs: 20000, ckMs: 5000 };
+//   D+0     客戶端離線。Cloudflare 不通知，串流也不會被取消（見 send() 的註解）
+//   D+5s    hangMs 逾時 → 判定斷線，開始算續跑預算
+//   D+25s   budgetMs 到期 → 主動收工
+//   D+27s   收尾 batch 寫完（assistant 內容＋conversation＋req_log）
+//   D+30s   ← 天花板：waitUntil 被砍，實測訊息是
+//           "waitUntil() tasks did not complete within the allowed time after invocation end"
+//
+// budgetMs — 20 秒（從判定斷線起算）。上面那條時間軸留了 3 秒餘裕給收尾批次。
+//   實測過 120 秒（等於不設限）：確實會撞到天花板被砍，收尾批次整批沒跑完 ——
+//   req_log 沒有、conversation 的 updated_at 沒更新。所以上限不能不設。
+// ckMs — 3 秒存一次已生成內容（同一列 UPDATE）。這是撞天花板時的保命索：
+//   實測那次 120 秒被砍，收尾沒跑，但**靠階段性存檔留住了 1798 字**。沒有它就是全丟。
+//   間隔＝被砍時最多損失幾秒的字，所以壓到 3 秒。
+// hangMs — 5 秒。刻意不再壓低：真正連著的客戶端若讓單次 flush 卡超過 5 秒（爛網路、
+//   手機切換基地台）會被誤判成離線，代價是畫面停止更新、要重新整理才看得到後續。
+//   壓低雖然能多換幾秒生成時間，但拿「線上使用者的即時體驗」去換不划算。
+//
+// 用可變物件而不是 const：測試要能改小值驗證這幾條路徑（見 playground-chat.test.ts）。
+export const BG = { budgetMs: 20000, ckMs: 3000, hangMs: 5000 };
 
 export async function onRequestPost(context: RouteCtx): Promise<Response> {
   const { request, env } = context;
@@ -227,16 +238,53 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   const ts = new TransformStream();
   const writer = ts.writable.getWriter();
   const enc = new TextEncoder();
-  // 瀏覽器斷線／按停止 → 往串流寫入會失敗。從那一刻起沒有人在看，但上游還在生成，
-  // 所以不掐斷、繼續在背景讀完（見 BG）— 會員關掉網頁回來仍看得到完整回覆。
+  // ── 斷線偵測（2026-07-21 線上實測後改寫，這段的前身是錯的）──
+  // 原本寫成「瀏覽器一斷線，往串流寫入就會失敗 → catch 裡設 gone」。實測推翻：
+  // 客戶端離線時 Cloudflare **不會**取消這條回應串流，沒有人讀 → 背壓永遠不解除 →
+  // writer.write() 既不 resolve 也不 reject，就是永遠不回來。程式卡在 await，最後被
+  // 判定 "code had hung and would never generate a response" 整個請求 canceled ——
+  // D1 收尾批次、req_log、errlog 全部陪葬。站內看不到任何痕跡，只有 wrangler tail
+  // 會顯示 outcome=canceled（與 ADR-0011 的 CPU 爆掉同一種「拔電源」死法）。
+  // 所以偵測改成靠**寫入逾時**當死鎖斷路器：單次寫入卡超過 BG.hangMs 就判定對面不在。
+  // （下面還掛了 request.signal，但那是備而不用 —— 實測它不會觸發，詳見該處註解。）
   let gone = false,
     goneAt = 0; // 斷線時刻 — 續跑預算從這裡起算
-  function send(obj: unknown) {
+  function markGone() {
+    if (gone) return;
+    gone = true;
+    goneAt = Date.now();
+  }
+  function send(obj: unknown): Promise<void> {
     if (gone) return Promise.resolve();
-    return writer.write(enc.encode("data: " + JSON.stringify(obj) + "\n\n")).catch(function () {
-      gone = true;
-      goneAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const wrote = writer.write(enc.encode("data: " + JSON.stringify(obj) + "\n\n")).catch(markGone);
+    const guard = new Promise<void>(function (res) {
+      timer = setTimeout(function () {
+        markGone(); // 卡這麼久＝對面已經不在了
+        res();
+      }, BG.hangMs);
     });
+    return Promise.race([wrote, guard]).then(function () {
+      if (timer) clearTimeout(timer);
+    });
+  }
+  // ⚠️ request.signal：**實測（2026-07-21）它不會觸發**。屬性存在（TS 型別有、執行期也不是
+  // undefined），但客戶端關掉分頁後 abort 事件從來沒有送達 —— 加了探針上線實測，只等到
+  // 寫入逾時那一發，signal-abort 一次都沒印出。所以真正在偵測的是上面的 hangMs，
+  // 這段等於備而不用：留著是因為成本趨近於零，哪天 Cloudflare 補上就自動變成快路徑
+  // （省下 hangMs 那幾秒，直接反映成回覆多存幾百字）。
+  // 不要把它當成有效的偵測手段拿掉 hangMs —— 那會讓死鎖原封不動回來。
+  const sig = request.signal;
+  if (sig) {
+    if (sig.aborted) markGone();
+    else
+      sig.addEventListener("abort", function () {
+        markGone();
+        // 順手把卡住的那次 write 弄斷，否則它會一直掛著（不 await，避免又是一次可能卡住的等待）
+        try {
+          void writer.abort();
+        } catch (e) {}
+      });
   }
   const ct = String(resp.headers.get("content-type") || "");
   const ttfb = Date.now() - t0; // 上游回應標頭到手的時間
@@ -483,9 +531,17 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
         await send({ error: "empty-output", hint: hint });
       }
       await send({ done: true });
-      try {
-        await writer.close();
-      } catch (e) {}
+      // 斷線後絕對不能 await close()：串流已經沒人讀，close 會跟 write 卡在同一個
+      // 死鎖上，那正是整個請求被 canceled 的原因。改成不等待的 abort。
+      if (gone) {
+        try {
+          void writer.abort();
+        } catch (e) {}
+      } else {
+        try {
+          await writer.close();
+        } catch (e) {}
+      }
     })()
   );
 
