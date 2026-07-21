@@ -38,9 +38,34 @@ describe("adminOk × LOGS_TOKEN 已設定", () => {
 });
 
 describe("adminOk × LOGS_TOKEN 未設定", () => {
-  it("localhost 免驗放行（本機開發）", async () => {
-    const local = new URL("http://localhost:8788/api/admin/x");
-    expect(await adminOk(new Request(local), envWith({}), local)).toBe(true);
+  const local = new URL("http://localhost:8788/api/admin/x");
+
+  it("開發旗標 DEV_UNSAFE_ADMIN='1' → 免驗放行（本機開發）", async () => {
+    expect(await adminOk(new Request(local), envWith({ DEV_UNSAFE_ADMIN: "1" }), local)).toBe(true);
+  });
+
+  // 2026-07-22：這條原本是「localhost 免驗放行」，判斷依據是 url.hostname —— 而 Workers 的
+  // request.url 的 host 來自 **Host 標頭，客戶端可控**。正式站因為有設 LOGS_TOKEN、
+  // 且 Cloudflare 按 Host/SNI 路由所以打不到，但形狀是錯的：授權決策的輸入來自請求本身，
+  // 而且 LOGS_TOKEN 忘了設就往「開」的方向倒。改成明示的環境旗標之後，Host 說什麼都沒用。
+  it("沒有開發旗標 → Host 說自己是 localhost 也不放行（授權不看客戶端可控的標頭）", async () => {
+    expect(await adminOk(new Request(local), envWith({}), local)).toBe(false);
+    const loop = new URL("http://127.0.0.1/api/admin/x");
+    expect(await adminOk(new Request(loop), envWith({}), loop)).toBe(false);
+  });
+
+  it("旗標是空字串／其他值 → 一律關（只認 '1'）", async () => {
+    expect(await adminOk(new Request(local), envWith({ DEV_UNSAFE_ADMIN: "" }), local)).toBe(false);
+    expect(await adminOk(new Request(local), envWith({ DEV_UNSAFE_ADMIN: "true" }), local)).toBe(false);
+    expect(await adminOk(new Request(local), envWith({ DEV_UNSAFE_ADMIN: "0" }), local)).toBe(false);
+  });
+
+  it("有設 LOGS_TOKEN 時，開發旗標不構成繞道（金鑰錯就是錯）", async () => {
+    const e = envWith({ LOGS_TOKEN: "sekret-token", DEV_UNSAFE_ADMIN: "1" });
+    expect(await adminOk(new Request(local, { headers: { authorization: "Bearer wrong" } }), e, local)).toBe(
+      false
+    );
+    expect(await adminOk(new Request(local), e, local)).toBe(false);
   });
   it("正式站沒 token 沒 session → 擋", async () => {
     expect(await adminOk(req(), envWith({}), URL_)).toBe(false);

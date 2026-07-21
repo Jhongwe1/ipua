@@ -18,6 +18,10 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   TG_BOT_TOKEN?: string; // Phase I Telegram 告警（未設＝告警 no-op）
   TG_CHAT_ID?: string;
+  // 開發模式後門旗標（2026-07-22，見 lib/auth.ts isDevEnv）。"1"＝允許「沒有 LOGS_TOKEN 也放行管理端點」
+  // 與 /auth/login 的本機測試登入表單。**只放 .dev.vars**（wrangler dev 才讀、deploy 永不上傳），
+  // wrangler.toml 刻意不宣告它 —— 正式環境讀到 undefined 就是關閉。
+  DEV_UNSAFE_ADMIN?: string;
   [key: string]: unknown;
 }
 
@@ -61,7 +65,7 @@ export interface ChannelRow {
   base_url: string;
   api_key: string;
   models: string;
-  system_prompt: string; // 只給 LLM Playground 注入的系統提示詞；/relay 中轉不讀這欄（migration 0005）
+  system_prompt: string; // 只給 Playground 注入的系統提示詞；/relay 中轉不讀這欄（migration 0005）
   extra_body: string; // 合併進 playground 上游請求本體的額外參數（JSON 物件字串）；/relay 不讀（migration 0006）
   enabled: number;
   created_at: string;

@@ -26,7 +26,10 @@ export default defineConfig({
     },
     {
       command:
-        "npm run seed:e2e && npx wrangler dev --port 8787 --persist-to .wrangler/e2e-state --var ADMIN_EMAILS:admin@example.com",
+        // DEV_UNSAFE_ADMIN:1 —— E2E 走 /auth/login 的測試登入表單，而那條路 2026-07-22 起
+        // 改由明示旗標開啟（原本看 Host 是不是 localhost，見 lib/auth.ts isDevEnv）。
+        // 寫在這裡而不是靠 .dev.vars：.dev.vars 在 .gitignore 裡，CI 上不存在。
+        "npm run seed:e2e && npx wrangler dev --port 8787 --persist-to .wrangler/e2e-state --var ADMIN_EMAILS:admin@example.com --var DEV_UNSAFE_ADMIN:1",
       url: "http://localhost:8787/api/health",
       reuseExistingServer: false, // 一定要吃剛清好的 e2e 狀態，不重用舊伺服器
       timeout: 180_000

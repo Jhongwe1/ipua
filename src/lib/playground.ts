@@ -1,4 +1,4 @@
-// src/lib/playground.ts — LLM Playground（/playground）的伺服器共用邏輯。
+// src/lib/playground.ts — Playground（/playground）的伺服器共用邏輯。
 // 頁面本體在 src/lib/playgroundpage.ts；API 端點在 src/routes/api/playground/*。
 //
 // 設計重點：
@@ -8,7 +8,7 @@
 //      對瀏覽器統一輸出一種極簡 SSE：{conv}→{d:"文字"}…→{done}（出錯：{error,hint}）。
 //   3. 管理員／agent 可用 Authorization: Bearer <LOGS_TOKEN> 直接測（身分算管理員帳號）。
 import { json } from "./site.js";
-import { getSessionUser, goodOrigin, canUsePlayground, adminEmails, isLocal, tokenEqual } from "./auth.js";
+import { getSessionUser, goodOrigin, canUsePlayground, adminEmails, isDevEnv, tokenEqual } from "./auth.js";
 import type { ChannelRow, Env, UserRow } from "../types.js";
 
 export const PG_LIMITS = {
@@ -34,7 +34,7 @@ export const PG_DEFAULT_SYSTEM =
   "你的上游供應商或服務商是 uaip.cc.cd。";
 
 // 站台層的預設系統提示詞（settings 表 pg_default_system，2026-07-21 /settings 頁加）：
-// 管理員在 /settings「LLM Playground」卡改一次，所有「沒自己填」的管道一起換 —
+// 管理員在 /settings「Playground」卡改一次，所有「沒自己填」的管道一起換 —
 // 不必逐個管道開視窗改。三層優先序（前面有值就用前面的，不疊加）：
 //   管道 relay_channels.system_prompt → settings.pg_default_system → PG_DEFAULT_SYSTEM（程式內建）。
 // 沒設過或設成空字串＝刪鍵＝回到內建那段（跟 brand、quota_* 等鍵同一套語意）。
@@ -57,7 +57,7 @@ export type PgUserResult = { user: UserRow; err?: undefined } | { err: Response;
 export async function pgUser(request: Request, env: Env, url: URL): Promise<PgUserResult> {
   const auth = request.headers.get("authorization") || "";
   const token = auth.indexOf("Bearer ") === 0 ? auth.slice(7).trim() : "";
-  const tokenOk = env.LOGS_TOKEN ? await tokenEqual(token, env.LOGS_TOKEN) : !!token && isLocal(url);
+  const tokenOk = env.LOGS_TOKEN ? await tokenEqual(token, env.LOGS_TOKEN) : !!token && isDevEnv(env);
   if (tokenOk) {
     const em = adminEmails(env)[0] || "";
     const u = await env.DB.prepare(
@@ -136,7 +136,13 @@ export function cleanChat(b: any): CleanChatResult {
 //
 // model／stream／messages／contents 擋掉不給覆寫：前三個被改會直接打斷 SSE 串流管線，
 // 而 model 是經過渠道白名單驗證的 — 能從這裡改等於繞過驗證去用沒開放的模型（配額也會算錯）。
-const PROTECTED_BODY_KEYS = ["model", "stream", "messages", "contents"];
+//
+// n（2026-07-22 補）：要求上游一次生成多個候選。目前不可達（playground 從不設 n），
+// 但 extra_body 允許任意鍵，管理員在渠道填 {"n":2} 就會讓快慢兩條解析路徑輸出**不同內容**：
+// fastsse.ts 的 FIELD_RE 是全域正則，會把一筆 payload 裡**所有** "content":"…" 串接起來
+// （choices[0] 與 choices[1] 都算）；慢速路徑只讀 choices[0].delta.content。
+// 結果不是 crash，是**靜默的內容汙染** —— 兩條路徑同時存在時最難查的那種。
+const PROTECTED_BODY_KEYS = ["model", "stream", "messages", "contents", "n"];
 
 export function mergeExtraBody(body: Record<string, unknown>, extra: unknown): Record<string, unknown> {
   const raw = String(extra == null ? "" : extra).trim();

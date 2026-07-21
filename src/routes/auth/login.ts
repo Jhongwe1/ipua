@@ -2,7 +2,7 @@
 // ?next=/vpn 這種站內路徑會在登入完成後跳回去。
 // 沒設定 GOOGLE_CLIENT_ID 時：正式站顯示「尚未開通」；本機（localhost）改提供
 // 「測試登入」表單（POST 到本頁），方便沒有 Google 憑證也能開發測試。
-import { isLocal, safeNext, randToken, miniPage, createSession, adminEmails } from "../../lib/auth.js";
+import { isDevEnv, safeNext, randToken, miniPage, createSession, adminEmails } from "../../lib/auth.js";
 import type { RouteCtx, UserRow } from "../../types.js";
 
 const OAUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -12,7 +12,7 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
   const next = safeNext(url.searchParams.get("next"));
 
   if (!env.GOOGLE_CLIENT_ID) {
-    if (isLocal(url)) return devForm(next);
+    if (isDevEnv(env)) return devForm(next);
     return miniPage(
       "Google 登入尚未開通",
       "<p>管理員還沒設定 Google 登入憑證（GOOGLE_CLIENT_ID／GOOGLE_CLIENT_SECRET）。設定方式見專案 ADMIN.md。</p>" +
@@ -45,7 +45,7 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
 // 本機測試登入：輸入任意信箱就建立帳號＋登入（只在 localhost 生效；正式站走不到這裡）
 export async function onRequestPost({ request, env }: RouteCtx): Promise<Response> {
   const url = new URL(request.url);
-  if (!isLocal(url)) return miniPage("不支援", "<p>此登入方式僅供本機開發。</p>", 403);
+  if (!isDevEnv(env)) return miniPage("不支援", "<p>此登入方式僅供本機開發。</p>", 403);
   if (!env.DB) return miniPage("錯誤", "<p>本機資料庫未建立 — 先跑 npm run migrate:local。</p>", 500);
 
   const form = await request.formData().catch(function () {

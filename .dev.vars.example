@@ -1,0 +1,20 @@
+# .dev.vars.example — 複製成 .dev.vars 就能用（`cp .dev.vars.example .dev.vars`）。
+#
+# .dev.vars 只有 `wrangler dev` 會讀，`wrangler deploy` **永遠不會上傳**它，
+# wrangler.toml 也刻意不宣告這些鍵 —— 所以正式環境讀到的一律是 undefined。
+# .dev.vars 本身在 .gitignore 裡（之後可能會放本機測試用的真實憑證）。
+
+# 本機開發後門（見 src/lib/auth.ts 的 isDevEnv）。設成 "1" 之後：
+#   * 沒有 LOGS_TOKEN 也能打管理端點與 /logs /admin /settings
+#   * /auth/login 提供「測試登入」表單（隨便填信箱就建帳號＋登入），不必設定 Google OAuth
+# 這兩件事在 2026-07-22 之前是靠「Host 標頭是不是 localhost」判斷的 —— 那是拿客戶端
+# 送來的字串做授權判斷，而且 LOGS_TOKEN 忘了設就會往「開」的方向倒。改成明示旗標之後，
+# 要開後門必須在自己的機器上留下這個檔案。
+DEV_UNSAFE_ADMIN="1"
+
+# 本機要測 Google 登入才需要（不填就用上面的測試登入表單）
+# GOOGLE_CLIENT_ID="xxxx.apps.googleusercontent.com"
+# GOOGLE_CLIENT_SECRET="xxxx"
+
+# 本機要模擬正式站的管理金鑰時填（填了就**不再**吃 DEV_UNSAFE_ADMIN 的免驗放行）
+# LOGS_TOKEN="local-test-token"

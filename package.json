@@ -1,12 +1,13 @@
 {
   "name": "uaip",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "description": "Edge-native LLM gateway + personal portal on Cloudflare Workers (zero framework, zero runtime deps, D1 only).",
   "scripts": {
-    "dev": "wrangler dev",
-    "test": "vitest run",
+    "dev": "wrangler dev --var DEV_UNSAFE_ADMIN:1",
+    "test": "vitest run --reporter=default --reporter=json --outputFile=.vitest-report.json",
+    "check:docs": "node tools/check-docs.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "migrate:local": "wrangler d1 migrations apply ipua-logs --local",
     "migrate:remote": "wrangler d1 migrations apply ipua-logs --remote",
@@ -15,10 +16,12 @@
     "e2e": "playwright test",
     "apidoc": "node --experimental-strip-types tools/build-apidoc.mjs",
     "openapi": "node tools/build-openapi.mjs",
+    "bench": "node --expose-gc tools/bench-sse.mjs",
+    "loadtest": "node tools/loadtest.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "checks": "npm run lint && npm run typecheck && npm run test",
+    "checks": "npm run lint && npm run typecheck && npm run test && npm run check:docs",
     "deploy": "npm run apidoc && npm run openapi && wrangler deploy"
   },
   "devDependencies": {

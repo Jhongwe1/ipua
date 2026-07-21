@@ -28,3 +28,12 @@ Desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# 本機開發變數（wrangler dev 專用；deploy 永不上傳）。範本見 .dev.vars.example
+.dev.vars
+
+# 口頭防禦練習用的私人筆記（面試準備，不進版控）
+docs/DEFENSE.md
+
+# vitest JSON 報告（tools/check-docs.mjs 的輸入，每次 npm test 重生）
+.vitest-report.json
