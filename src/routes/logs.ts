@@ -1,7 +1,7 @@
 // GET /logs — 訪客紀錄管理頁（管理員專用）。
 // 2026-07-09 起改用全站共用外殼（src/lib/site.ts pageShell）：☰ 側邊欄、日夜、EN/中 與其他頁一致。
 // 頁面行為在 public/assets/logs.js；資料要帶金鑰打 /api/logs 才拿得到，沒金鑰只會看到驗證畫面。
-import { html, pageShell, ADMIN_CSS } from "../lib/site.js";
+import { html, pageShell, ADMIN_CSS, assetSrc } from "../lib/site.js";
 import { getChromeFor } from "../lib/chrome.js";
 import type { RouteCtx } from "../types.js";
 
@@ -180,7 +180,7 @@ const BODY = `
     <p class="pagenote">全站會員在 Playground 存下的對話，新→舊排列 · 點一列展開完整內容 · 體驗模式（未登入試用）的對話也在這裡，成員顯示「體驗模式（匿名訪客合計）」— 訪客自己看不到任何歷史</p>
   </div>
 </section>
-<script data-nonce src="/assets/logs.js?v=20260721"><\/script>`;
+<script data-nonce src="${assetSrc("logs.js")}"><\/script>`;
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）

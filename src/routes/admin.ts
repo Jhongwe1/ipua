@@ -1,7 +1,7 @@
 // GET /admin — 文章管理後台（管理員專用；支援 ?edit=編號、?new=分類 直達）。
 // 2026-07-09 起改用全站共用外殼（src/lib/site.ts pageShell）：☰ 側邊欄、日夜、EN/中 與其他頁一致。
 // 頁面行為在 public/assets/admin.js；內文預覽直接吃外殼的 .prose 樣式，跟正式文章頁完全同一份。
-import { html, pageShell, ADMIN_CSS } from "../lib/site.js";
+import { html, pageShell, ADMIN_CSS, assetSrc } from "../lib/site.js";
 import { getChromeFor } from "../lib/chrome.js";
 import type { RouteCtx } from "../types.js";
 
@@ -124,8 +124,8 @@ const BODY = `
     <button id="delBtn" class="ghost danger hidden" type="button">刪除</button>
   </div>
 </section>
-<script data-nonce src="/assets/marked.js"><\/script>
-<script data-nonce src="/assets/admin.js"><\/script>`;
+<script data-nonce src="${assetSrc("marked.js")}"><\/script>
+<script data-nonce src="${assetSrc("admin.js")}"><\/script>`;
 
 export async function onRequestGet({ request, env }: RouteCtx): Promise<Response> {
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）

@@ -50,7 +50,17 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
   try {
     body = await request.json();
   } catch (e) {}
-  let act: Record<string, unknown> | undefined = body && ACTIONS[body.action];
+  // 只認自有屬性，並且複製一份。兩個理由：
+  //   1. body.action = "constructor"／"__proto__"／"toString" 會從 Object.prototype 撈到
+  //      truthy 的東西，繞過下面的 bad-action 檢查，最後組出空的 SET 子句 → SQL 語法錯 → 500
+  //      （而不是乾淨的 400）。
+  //   2. act 之後會被就地寫入（set_services 那條的 act.status），直接用 ACTIONS 裡的物件
+  //      等於改到模組層級的共用常數 —— 在長壽的 isolate 上會污染後續所有請求。
+  //      目前的分支剛好都先換成新物件，但這是「靠巧合成立」，不該留給下一個人踩。
+  let act: Record<string, unknown> | undefined =
+    body && Object.prototype.hasOwnProperty.call(ACTIONS, body.action)
+      ? Object.assign({}, ACTIONS[body.action])
+      : undefined;
   if (body && body.action === "set_services") {
     // 分服務批准：整包覆蓋服務清單（只收合法服務名，去重）
     const want = Array.isArray(body.services) ? body.services : null;

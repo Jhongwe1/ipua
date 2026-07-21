@@ -6,7 +6,18 @@
 
 import type { Env } from "../types.js";
 
-export const VERSION = "2.0.0"; // 站台版本（/api/health 回報；發佈時同步 git tag）
+export const VERSION = "2.1.0"; // 站台版本（/api/health 回報；發佈時同步 git tag）
+
+// 靜態資產的快取破壞參數（2026-07-22 收斂成單一常數）。
+// public/assets/*.js 有 4 小時的邊緣／瀏覽器快取，改了就要把這個值調大，否則回訪的
+// 使用者會拿到舊程式。以前這個版本號是**手抄在每個 <script> 標籤上**的，於是必然漂掉：
+// 收斂前同時存在 account.js?v=20260717b、logs.js?v=20260721，以及 admin.js／marked.js
+// 「根本沒帶」三種狀態 —— 後者等於那兩支的更新永遠要等快取自然過期。
+// 一個常數、一個 assetSrc()，這一整類問題就不會再發生。
+export const ASSET_V = "20260722";
+export function assetSrc(file: string): string {
+  return "/assets/" + file + "?v=" + ASSET_V;
+}
 
 // 站台正式網址（canonical、og、sitemap、RSS 用）：優先 env.SITE_ORIGIN（wrangler.toml
 // [vars]；fork 的人改那裡就好，程式碼不寫死網域），沒設定就用請求本身的 origin。
@@ -36,7 +47,7 @@ export interface MenuItem {
 // 管理員在編輯模式改過選單後，以資料表內容為準。
 export const DEFAULT_MENU: MenuItem[] = [
   { kind: "section", label: "服務", label_en: "Services", url: "" },
-  { kind: "link", label: "LLM playground", label_en: "LLM playground", url: "/playground" },
+  { kind: "link", label: "Playground", label_en: "Playground", url: "/playground" },
   { kind: "link", label: "API 中轉站", label_en: "API relay", url: "/relay" },
   { kind: "link", label: "VPN", label_en: "VPN", url: "/vpn" },
   { kind: "section", label: "工具", label_en: "Tools", url: "" },
@@ -250,7 +261,7 @@ export function pageShell(o: PageShellOpts): string {
     '<button id="themeToggle" class="ctrl" title="Day / Night">☾</button></div></header>\n' +
     o.body +
     "\n" +
-    // foot.tool 連到 /ip：根網址 / 已改跳 LLM playground（public/_redirects），工具入口改走 /ip
+    // foot.tool 連到 /ip：根網址 / 已改跳 Playground（public/_redirects），工具入口改走 /ip
     '  <footer><a href="/news" data-i18n="cat.news">新聞</a> · <a href="/articles" data-i18n="cat.article">文章</a> · <a href="/ip" data-i18n="foot.tool">IP·UA 查詢</a> · <a href="/feed" data-i18n="foot.rss">RSS 訂閱</a></footer>\n' +
     "</div>\n<script data-nonce>var __TKEY=" +
     JSON.stringify(o.tkey || null) +
@@ -259,8 +270,9 @@ export function pageShell(o: PageShellOpts): string {
     ";" +
     SHELL_JS +
     "</script>\n" +
-    // ?v= 版本參數：assets 有 4 小時邊緣/瀏覽器快取，改了 account.js/adminbar.js 要一起把這裡的版本號調大
-    '<script data-nonce src="/assets/account.js?v=20260717b"></script>\n</body>\n</html>\n'
+    '<script data-nonce src="' +
+    assetSrc("account.js") +
+    '"></script>\n</body>\n</html>\n'
   );
 }
 
@@ -415,7 +427,7 @@ const SHELL_JS = `
     zh:{"sb.title":"選單","sb.content":"內容","sb.tools":"工具","sb.admin":"管理員","sb.manage":"文章管理","sb.logs":"訪客紀錄",
         "cat.news":"新聞","cat.article":"文章","tab.ip":"IP 查詢","tab.ua":"UA 查詢",
         "foot.tool":"IP·UA 查詢","foot.rss":"RSS 訂閱",
-        "page.relay":"API 中轉站","page.vpn":"VPN","page.members":"成員管理","page.playground":"LLM playground",
+        "page.relay":"API 中轉站","page.vpn":"VPN","page.members":"成員管理","page.playground":"Playground",
         "back.news":"← 回新聞列表","back.article":"← 回文章列表",
         "empty.list":"目前還沒有內容，敬請期待。","empty.404":"找不到這篇內容 — 可能已下架或網址有誤。",
         "pg.prev":"‹ 上一頁","pg.next":"下一頁 ›","an.prev":"上一篇","an.next":"下一篇",
@@ -424,7 +436,7 @@ const SHELL_JS = `
     en:{"sb.title":"Menu","sb.content":"Content","sb.tools":"Tools","sb.admin":"Admin","sb.manage":"Manage posts","sb.logs":"Visitor logs",
         "cat.news":"News","cat.article":"Articles","tab.ip":"IP Lookup","tab.ua":"UA Lookup",
         "foot.tool":"IP·UA Lookup","foot.rss":"RSS",
-        "page.relay":"API relay","page.vpn":"VPN subscription","page.members":"Members","page.playground":"LLM playground",
+        "page.relay":"API relay","page.vpn":"VPN subscription","page.members":"Members","page.playground":"Playground",
         "back.news":"← Back to News","back.article":"← Back to Articles",
         "empty.list":"Nothing here yet — stay tuned.","empty.404":"Content not found — it may have been removed or the URL is wrong.",
         "pg.prev":"‹ Prev","pg.next":"Next ›","an.prev":"Previous","an.next":"Next",
@@ -526,7 +538,7 @@ const SHELL_JS = `
          或本機開發才載入 /assets/adminbar.js；一般訪客完全不會下載這支程式 --- */
   try{
     if(localStorage.getItem("ipua-logs-token")||location.hostname==="localhost"||location.hostname==="127.0.0.1"){
-      var abs=document.createElement("script");abs.src="/assets/adminbar.js?v=20260717b";document.head.appendChild(abs);
+      var abs=document.createElement("script");abs.src="${assetSrc("adminbar.js")}";document.head.appendChild(abs);
     }
   }catch(e){}
   applyI18n();

@@ -1,9 +1,9 @@
-// GET /playground — LLM Playground（會員頁）。
+// GET /playground — Playground（會員頁）。
 // 未登入 → 登入閘門；沒被批准 playground 服務 → 等待批准畫面；批准後是完整聊天介面：
 // 選模型（管理員在 /relay 渠道裡設定的清單）、串流回覆、新對話、歷史對話（存 D1、跨裝置）、
 // 改名／刪除、Markdown 渲染（含程式碼複製）。桌機左側常駐對話列表；手機收成抽屜。
 // 後端邏輯在 src/lib/playground.ts 與 src/routes/api/playground/*。
-import { html, pageShell } from "./site.js";
+import { html, pageShell, assetSrc } from "./site.js";
 import { getChromeFor } from "./chrome.js";
 import { MEMBER_CSS, MEMBER_JS } from "./memberui.js";
 import type { Env } from "../types.js";
@@ -149,7 +149,9 @@ export async function playgroundPageResponse(env: Env, request: Request): Promis
   const { chrome } = await getChromeFor(env, request); // 選單依身分過濾（VPN 隱形）
   const body =
     '<div id="root"><div class="gate"><div class="spin"></div></div></div>\n' +
-    '<script data-nonce src="/assets/marked.js"></script>\n' +
+    '<script data-nonce src="' +
+    assetSrc("marked.js") +
+    '"></script>\n' +
     "<script data-nonce>" +
     MEMBER_JS +
     "</script>\n" +
@@ -158,13 +160,13 @@ export async function playgroundPageResponse(env: Env, request: Request): Promis
     "</script>";
   return html(
     pageShell({
-      title: "LLM playground",
+      title: "Playground",
       tkey: "page.playground",
-      desc: "會員專用的 LLM playground — 在網頁上直接試用站上的 AI 模型。",
+      desc: "會員專用的 Playground — 在網頁上直接試用站上的 AI 模型。",
       noindex: true,
       chrome: chrome,
       activePath: "/playground",
-      h1: '<a href="/">LLM playground</a>',
+      h1: '<a href="/">Playground</a>',
       // 蓋掉外殼的 viewport（後出現者生效）：鎖 maximum-scale，手機點輸入框不會自動放大頁面
       headExtra:
         '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">\n' +
@@ -244,7 +246,7 @@ const PG_JS = `
   /* ================= 進入點與閘門 ================= */
   function paint(){
     if(streaming)return;   // 串流中不整頁重畫
-    if(!me){MU.gateLogin(root,"LLM playground",tx("請先用 Google 登入","Please sign in with Google first."));return;}
+    if(!me){MU.gateLogin(root,"Playground",tx("請先用 Google 登入","Please sign in with Google first."));return;}
     if(!hasSvc()){MU.gatePending(root,me);return;}
     buildApp();
   }

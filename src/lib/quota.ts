@@ -13,9 +13,13 @@ import type { Env, UserRow } from "../types.js";
 
 export const QUOTA_DEFAULTS = { quota_relay_day: 500, quota_pg_day: 200, rl_per_min: 30 };
 
-function intOr(v: unknown, dft: number): number {
+// 名字帶著門檻（2026-07-22 改名）：demo.ts 有一支同名同簽章、但收 n>0 的孿生函式。
+// 兩邊的語意各自站得住（配額 0＝完全禁用是合法設定；demo 的 0 只會是誤填），
+// 問題出在「同名同簽章、行為不同」——讀到任一支都會以為自己知道另一支在做什麼。
+// 把門檻放進呼叫端，兩者就不可能再被搞混。
+function intAtLeast(v: unknown, dft: number, min: number): number {
   const n = parseInt(String(v), 10);
-  return Number.isFinite(n) && n >= 0 ? n : dft;
+  return Number.isFinite(n) && n >= min ? n : dft;
 }
 
 /** 今天（UTC）0 點的 ISO 字串 — req_log.ts 也是 ISO，字典序比較即可。 */
@@ -103,13 +107,14 @@ export async function checkQuota(env: Env, user: UserRow, svc: "relay" | "pg"): 
     const st: Record<string, string> = {};
     for (const r of (rs.results || []) as { k: string; v: string }[]) st[r.k] = r.v;
     const dayKey = svc === "relay" ? "quota_relay_day" : "quota_pg_day";
-    const dayDefault = intOr(
+    const dayDefault = intAtLeast(
       st[dayKey],
-      svc === "relay" ? QUOTA_DEFAULTS.quota_relay_day : QUOTA_DEFAULTS.quota_pg_day
+      svc === "relay" ? QUOTA_DEFAULTS.quota_relay_day : QUOTA_DEFAULTS.quota_pg_day,
+      0
     );
-    const dayLimit = user[dayKey] == null ? dayDefault : intOr(user[dayKey], dayDefault);
-    const rlDefault = intOr(st.rl_per_min, QUOTA_DEFAULTS.rl_per_min);
-    const rlLimit = user.rl_per_min == null ? rlDefault : intOr(user.rl_per_min, rlDefault);
+    const dayLimit = user[dayKey] == null ? dayDefault : intAtLeast(user[dayKey], dayDefault, 0);
+    const rlDefault = intAtLeast(st.rl_per_min, QUOTA_DEFAULTS.rl_per_min, 0);
+    const rlLimit = user.rl_per_min == null ? rlDefault : intAtLeast(user.rl_per_min, rlDefault, 0);
 
     // 第一層：DO 原子計數（每會員一顆實例；被擋的請求不吃額度）
     if (st.quota_do !== "0" && env.RATE_LIMITER) {
@@ -248,14 +253,18 @@ export async function usageSummary(env: Env, user: UserRow, services: string[]):
     const admin = isAdminUser(user, env);
     const out: UsageOut = {};
     if (wantRelay) {
-      const dft = intOr(st.quota_relay_day, QUOTA_DEFAULTS.quota_relay_day);
+      const dft = intAtLeast(st.quota_relay_day, QUOTA_DEFAULTS.quota_relay_day, 0);
       out.relay_today = Number(((res[1].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
-      out.relay_limit = admin ? null : user.quota_relay_day == null ? dft : intOr(user.quota_relay_day, dft);
+      out.relay_limit = admin
+        ? null
+        : user.quota_relay_day == null
+          ? dft
+          : intAtLeast(user.quota_relay_day, dft, 0);
     }
     if (wantPg) {
-      const dft = intOr(st.quota_pg_day, QUOTA_DEFAULTS.quota_pg_day);
+      const dft = intAtLeast(st.quota_pg_day, QUOTA_DEFAULTS.quota_pg_day, 0);
       out.pg_today = Number(((res[2].results || [{ c: 0 }])[0] as { c?: unknown }).c) || 0;
-      out.pg_limit = admin ? null : user.quota_pg_day == null ? dft : intOr(user.quota_pg_day, dft);
+      out.pg_limit = admin ? null : user.quota_pg_day == null ? dft : intAtLeast(user.quota_pg_day, dft, 0);
     }
     return out;
   } catch (e) {

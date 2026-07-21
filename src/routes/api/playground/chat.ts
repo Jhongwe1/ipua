@@ -249,18 +249,41 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   // （下面還掛了 request.signal，但那是備而不用 —— 實測它不會觸發，詳見該處註解。）
   let gone = false,
     goneAt = 0; // 斷線時刻 — 續跑預算從這裡起算
-  function markGone() {
+  // 記一筆 errlog（2026-07-22）：hangMs 分不出「使用者關了網頁」與「手機網路卡了 5 秒」。
+  // 誤判時會員的串流會無聲停住 —— send() 之後直接 early-return，連錯誤事件都不會送出 ——
+  // 而在這之前**沒有任何方式能知道誤判率**。記下判定原因與發生時間點之後，
+  // DEBT #15/#16 那兩個常數（hangMs、budgetMs）的調校就從猜測變成量測：
+  //   reason=hang 佔絕大多數且集中在 5 秒 → 門檻可能太緊，正在砍掉爛網路的真實使用者
+  //   reason=write-rejected 出現       → Cloudflare 真的開始拒絕寫入了，可以縮短 hangMs
+  //   reason=abort-signal 出現         → request.signal 終於會觸發，hangMs 可以退居備援
+  function markGone(reason: string) {
     if (gone) return;
     gone = true;
     goneAt = Date.now();
+    reportError(
+      env,
+      function (p) {
+        context.waitUntil(p);
+      },
+      "pg.hang",
+      "客戶端判定離線（" + reason + "）",
+      {
+        user_id: user.id,
+        path: "/playground/" + v.channel,
+        detail: "reason=" + reason + " elapsed_ms=" + (goneAt - t0)
+      }
+    );
   }
   function send(obj: unknown): Promise<void> {
     if (gone) return Promise.resolve();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const wrote = writer.write(enc.encode("data: " + JSON.stringify(obj) + "\n\n")).catch(markGone);
+    // 注意不能寫成 .catch(markGone)：那會把 rejection 的理由當成 reason 參數傳進去。
+    const wrote = writer.write(enc.encode("data: " + JSON.stringify(obj) + "\n\n")).catch(function () {
+      markGone("write-rejected");
+    });
     const guard = new Promise<void>(function (res) {
       timer = setTimeout(function () {
-        markGone(); // 卡這麼久＝對面已經不在了
+        markGone("hang"); // 卡這麼久＝對面已經不在了
         res();
       }, BG.hangMs);
     });
@@ -276,10 +299,10 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   // 不要把它當成有效的偵測手段拿掉 hangMs —— 那會讓死鎖原封不動回來。
   const sig = request.signal;
   if (sig) {
-    if (sig.aborted) markGone();
+    if (sig.aborted) markGone("abort-signal");
     else
       sig.addEventListener("abort", function () {
-        markGone();
+        markGone("abort-signal");
         // 順手把卡住的那次 write 弄斷，否則它會一直掛著（不 await，避免又是一次可能卡住的等待）
         try {
           void writer.abort();

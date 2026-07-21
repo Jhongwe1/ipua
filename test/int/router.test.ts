@@ -11,12 +11,17 @@ import { createSession } from "../../src/lib/auth.js";
 // exec.waitUntil 收集背景 promise（visitLog 的 D1 寫入）並在回傳前排水 —
 // 不然背景寫入會拖過測試邊界，觸發 pool-workers 的 isolated storage 錯誤。
 const SPA = "<!doctype html><title>SPA-INDEX</title>";
-async function run(path: string, init?: RequestInit) {
-  const e = envWith({
-    ASSETS: {
-      fetch: async () => new Response(SPA, { status: 200, headers: { "content-type": "text/html" } })
-    }
-  });
+async function run(path: string, init?: RequestInit, extraEnv?: Record<string, unknown>) {
+  const e = envWith(
+    Object.assign(
+      {
+        ASSETS: {
+          fetch: async () => new Response(SPA, { status: 200, headers: { "content-type": "text/html" } })
+        }
+      },
+      extraEnv || {}
+    )
+  );
   const waits: Promise<unknown>[] = [];
   const exec = {
     waitUntil: (p: Promise<unknown>) => {
@@ -108,11 +113,20 @@ describe("method 分派與授權", () => {
     expect((await run("/api/account/key", { method: "GET" })).status).toBe(405);
     expect((await run("/api/account/key", { method: "POST", headers: { origin: ORIGIN } })).status).toBe(401);
   });
-  it("管理員 API 帶金鑰 → 200（/api/admin/users）", async () => {
+  // 2026-07-22：這條原本斷言 `expect([200, 401]).toContain(r.status)` —— 授權成功或失敗
+  // **都會通過**，等於沒有驗到任何東西。而這是 api/admin/users/index.ts 在 vitest 裡
+  // 唯一的接觸點，也就是說那支端點的授權接縫實際上是沒有網的。改成真的分開驗兩邊。
+  it("管理員 API：金鑰正確 → 200，金鑰錯／未帶 → 401（/api/admin/users）", async () => {
     await seedAdmin();
-    const r = await run("/api/admin/users", { headers: { authorization: "Bearer tk" } });
-    // envWith 沒設 LOGS_TOKEN → adminOk 在非 localhost 會擋；改用 cookie 身分驗
-    expect([200, 401]).toContain(r.status);
+    const E = { LOGS_TOKEN: "router-tok" };
+    const ok = await run("/api/admin/users", { headers: { authorization: "Bearer router-tok" } }, E);
+    expect(ok.status).toBe(200);
+    expect(Array.isArray(((await ok.json()) as any).rows)).toBe(true); // 真的回了資料，不是空殼 200
+
+    expect((await run("/api/admin/users", { headers: { authorization: "Bearer wrong" } }, E)).status).toBe(
+      401
+    );
+    expect((await run("/api/admin/users", {}, E)).status).toBe(401);
   });
   it("管理員 cookie 身分 → /api/admin/stats 200", async () => {
     const adm = await seedAdmin();

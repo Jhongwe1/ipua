@@ -31,9 +31,11 @@ export interface DemoCfg {
   contactUrl: string; // settings.contact_url — 額度用完的 429 附上去（沒設＝空字串）
 }
 
-function intOr(v: unknown, dft: number): number {
+// 見 quota.ts 同名函式的註解：那一支收 n>=0（配額 0＝禁用是合法設定），這一支要 n>=1
+// （demo 的每分鐘／每日上限填 0 只會是誤填，該退回預設而不是把功能鎖死）。
+function intAtLeast(v: unknown, dft: number, min: number): number {
   const n = parseInt(String(v), 10);
-  return Number.isFinite(n) && n > 0 ? n : dft;
+  return Number.isFinite(n) && n >= min ? n : dft;
 }
 
 /** 讀 demo 設定（settings 表 demo_* 鍵；任何失敗＝視為關閉）。 */
@@ -66,10 +68,10 @@ export async function demoCfg(env: Env): Promise<DemoCfg> {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
-      perMin: intOr(st.demo_per_min, DEMO_DEFAULTS.demo_per_min),
-      perIpDay: intOr(st.demo_per_ip_day, DEMO_DEFAULTS.demo_per_ip_day),
-      globalDay: intOr(st.demo_global_day, DEMO_DEFAULTS.demo_global_day),
-      maxTokens: intOr(st.demo_max_tokens, DEMO_DEFAULTS.demo_max_tokens),
+      perMin: intAtLeast(st.demo_per_min, DEMO_DEFAULTS.demo_per_min, 1),
+      perIpDay: intAtLeast(st.demo_per_ip_day, DEMO_DEFAULTS.demo_per_ip_day, 1),
+      globalDay: intAtLeast(st.demo_global_day, DEMO_DEFAULTS.demo_global_day, 1),
+      maxTokens: intAtLeast(st.demo_max_tokens, DEMO_DEFAULTS.demo_max_tokens, 1),
       contactUrl: String(st.contact_url || "").trim()
     };
   } catch (e) {
