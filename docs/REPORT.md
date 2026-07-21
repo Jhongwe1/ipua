@@ -63,6 +63,58 @@ $0.10 / $0.40 per M tokens in/out — set your own in `model_prices`):
 - Daily cron (rollup + backup + purge) and 5-minute alert scan report into
   `settings.cron_last_*`; first live runs verified 2026-07-17.
 
+## Synthetic load test — local, **not** production traffic (added 2026-07-22)
+
+Everything above is production data. This section is not: it is `wrangler dev` on a
+desktop, driven by [`tools/loadtest.mjs`](../tools/loadtest.mjs) against
+[`tools/mock-upstream.mjs`](../tools/mock-upstream.mjs). It is labelled separately
+because mixing synthetic numbers into a production report is how reports start lying.
+
+**Why it exists:** the rate limiter's only prior evidence was
+`test/unit/rate-limiter.test.ts` — 30 in-process calls through `Promise.all`. That test
+proves the *method body* never interleaves (no `await` inside `check()`), which is the
+crux of ADR-0007. It does **not** prove the property survives 200 separate HTTP
+connections, each carrying a router dispatch, a key lookup, a D1 read and a DO RPC
+round-trip. Those are exactly the layers where a concurrency claim usually dies.
+
+### Rate limiter under real HTTP concurrency
+
+200 requests fired without waiting for any response, one member, `rl_per_min = 30`:
+
+| outcome | count |
+|---|---|
+| `200` (allowed) | **30** |
+| `429` (limited) | **170** |
+
+Exactly the limit, never one more — the DO's single-threaded `check()` holds under real
+concurrency, and blocked requests do not consume quota (`check()` increments only on the
+allow path). Re-run with `node tools/loadtest.mjs`.
+
+### Gateway overhead (n=400, upstream delay subtracted)
+
+The mock upstream sleeps a fixed 25 ms, so `total − 25 ms` isolates what this worker
+costs: auth, quota DO, channel lookup, header rewrite, and the metering pump.
+
+| p50 | p95 | p99 | min | max |
+|---|---|---|---|---|
+| 36.5 ms | 49.7 ms | 56.1 ms | 22.3 ms | 69.4 ms |
+
+**Read these as an upper bound on a bad day, not as production latency.** `wrangler dev`
+runs a local workerd with none of the edge's warm-isolate advantages, D1 is a local SQLite
+file rather than the managed service, and client, gateway and upstream share one machine's
+CPU. The production TTFB table above (p50 502 ms including a real upstream) is the number
+that describes reality. What this table is good for is *relative* comparison — re-run it
+after changing the request path and see which direction it moves.
+
+### Parse-side CPU (`tools/bench-sse.mjs`)
+
+Reproduces ADR-0011 on demand: 5,982 synthetic deltas at 184 bytes each, full `JSON.parse`
+versus `fastDelta`, with a correctness check that both paths emit byte-identical text
+before any timing is reported. On the author's desktop the fast path is ~1.5× faster and —
+the more interesting column — triggers **zero GC events** where the full parse triggers
+several. That is ADR-0011's "allocation is billed twice" claim made visible: the fast path
+allocates one string instead of an object tree, so there is nothing to collect.
+
 ## Caveats (as promised by the skeleton)
 
 n=10 supports no statistical claim — the percentile table demonstrates the
@@ -93,3 +145,7 @@ tab renders.
 TTFB p50 502ms／p95 704ms 很緊，總耗時 p95 3.7s 是輸出長度拉的 — 正是 pump 架構
 預測的形狀（worker 不緩衝，總時長≈上游生成時長）。估算成本 ≈ $0.0011（示意單價）。
 n=10 不構成統計主張 — 展示的是「原始值→百分位→報告」這條管線全通。
+2026-07-22 新增一節**本機合成壓測**（與正式數據分開標示，不混在一起講）：200 條真 HTTP
+併發打限流器，恰好 30 個過、170 個 429 — ADR-0007 的原子性在真併發下成立，被擋的不吃額度。
+gateway overhead 扣掉上游延遲後 p50 36.5ms／p99 56.1ms，但那是 wrangler dev 的本機
+workerd，要當成「壞天氣的上限」而不是正式站延遲（正式站 TTFB p50 502ms 那張表才是現實）。
