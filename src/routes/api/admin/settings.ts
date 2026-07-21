@@ -246,7 +246,10 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
         // 內建預設 0（demo_max_tokens）代表「不限」— 別把 0 直接印給管理員看
         const d = (DEMO_DEFAULTS as Record<string, number>)[k];
         return json(
-          { error: "bad-input", hint: k + " 要是正整數，或 null＝回到內建預設（" + (d > 0 ? d : "不限") + "）" },
+          {
+            error: "bad-input",
+            hint: k + " 要是正整數，或 null＝回到內建預設（" + (d > 0 ? d : "不限") + "）"
+          },
           400
         );
       }

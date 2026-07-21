@@ -141,7 +141,11 @@ describe("demo 模式", () => {
 
     // 前端把拿到的編號帶回來 → 續在同一則，不是開新的
     reply("二");
-    const c2 = anonChat({ ...MSG, conv_id: conv, messages: [...MSG.messages, { role: "user", content: "再問" }] });
+    const c2 = anonChat({
+      ...MSG,
+      conv_id: conv,
+      messages: [...MSG.messages, { role: "user", content: "再問" }]
+    });
     const ev2 = sseEvents(await readAll(await chatPost(c2)));
     await drainWaits(c2);
     expect(ev2[0].conv).toBe(conv);

@@ -123,9 +123,7 @@ export async function demoCheck(env: Env, cfg: DemoCfg, request: Request): Promi
     if (!r1.ok) {
       const day = r1.kind === "day";
       const hint = day
-        ? withContact(
-            "今日的體驗額度用完了（" + r1.used + "/" + r1.limit + "）— 登入成為會員可獲得更高額度"
-          )
+        ? withContact("今日的體驗額度用完了（" + r1.used + "/" + r1.limit + "）— 登入成為會員可獲得更高額度")
         : "請求太快了（體驗模式每分鐘上限 " + r1.limit + "），請稍等再試";
       return {
         ok: false,

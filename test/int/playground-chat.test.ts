@@ -311,9 +311,7 @@ describe("playground chat", () => {
       // 這正是預設值不能設 0 的原因，也證明上限是真的生效的那道閘。
       expect(saved.results.length).toBe(0);
       // user 訊息不受影響 — 問過的問題永遠存得住
-      const u = await env.DB.prepare(
-        "SELECT COUNT(*) c FROM pg_messages WHERE conv_id=?1 AND role='user'"
-      )
+      const u = await env.DB.prepare("SELECT COUNT(*) c FROM pg_messages WHERE conv_id=?1 AND role='user'")
         .bind(conv.id)
         .first<any>();
       expect(u.c).toBe(1);
