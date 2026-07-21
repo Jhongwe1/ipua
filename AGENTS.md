@@ -22,7 +22,7 @@
 | 設會員／全域配額（v1.0.0） | `PUT /api/admin/users/{id} {"action":"set_quota",…}`（個人）、`PUT /api/admin/settings {"quota_relay_day":…}`（全域） |
 | 加／改 API 中轉管道（含模型清單） | `POST/PUT/DELETE /api/admin/relay/channels…`（`models` 必填） |
 | 加／改 VPN 渠道 | `POST/PUT/DELETE /api/admin/vpn/channels…` |
-| 測 LLM Playground | `POST /api/playground/chat`（管理金鑰可直接測，SSE 串流；`{r}`＝思考、`{d}`＝正文） |
+| 測 Playground | `POST /api/playground/chat`（管理金鑰可直接測，SSE 串流；`{r}`＝思考、`{d}`＝正文） |
 
 > **v1.0.0（2026-07-14）新增**：中轉／Playground 有**每人每日配額＋每分鐘限流**（管理員豁免；超額 429＋Retry-After），
 > 用量記在 req_log、看得到 token 與延遲；所有管理員變更寫**稽核日誌**；VPN 對未授權者**隱形**
@@ -31,7 +31,7 @@
 
 只有「改程式或版型」才需要動這個 repo 並部署（見文末）。
 
-**2026-07-11 起新增會員系統**（Google 登入）；**2026-07-13 起改分服務批准**：三個服務 `relay`（API 中轉站 /relay）、`vpn`（VPN 訂閱 /vpn）、`playground`（LLM Playground /playground）由管理員分別批准（`set_services` 整包覆蓋；`approve`＝一次全給）。**2026-07-14 起 playground 另有全站開關 `pg_open`**（設定後所有登入會員免逐一批准；relay/vpn 不受影響），開關在 /members 頁最上方或 `PUT /api/admin/settings`。管理員身分＝ADMIN_EMAILS 指定的信箱或 is_admin 帳號。逐端點細節見 [API.md](./API.md) 的 §5b–§5f。用管理金鑰（LOGS_TOKEN）就能操作全部管理員 API，不需登入。
+**2026-07-11 起新增會員系統**（Google 登入）；**2026-07-13 起改分服務批准**：三個服務 `relay`（API 中轉站 /relay）、`vpn`（VPN 訂閱 /vpn）、`playground`（Playground /playground）由管理員分別批准（`set_services` 整包覆蓋；`approve`＝一次全給）。**2026-07-14 起 playground 另有全站開關 `pg_open`**（設定後所有登入會員免逐一批准；relay/vpn 不受影響），開關在 /members 頁最上方或 `PUT /api/admin/settings`。管理員身分＝ADMIN_EMAILS 指定的信箱或 is_admin 帳號。逐端點細節見 [API.md](./API.md) 的 §5b–§5f。用管理金鑰（LOGS_TOKEN）就能操作全部管理員 API，不需登入。
 
 ## 連線與驗證
 

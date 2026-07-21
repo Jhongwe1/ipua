@@ -105,8 +105,8 @@ const MEMBERS_JS = `
     var g=el("div","g");
     g.appendChild(el("div","t1",tx("Playground 開放給所有登入會員","Open playground to all signed-in members")));
     g.appendChild(el("div","t2",tx(
-      "開啟後，任何已登入的會員不用逐一批准就能用 LLM playground（封鎖中的帳號照樣擋）；關閉＝回到下方逐人批准。",
-      "When on, any signed-in member can use the LLM playground without per-user approval (blocked accounts stay blocked). Turn off to go back to per-user grants below.")));
+      "開啟後，任何已登入的會員不用逐一批准就能用 Playground（封鎖中的帳號照樣擋）；關閉＝回到下方逐人批准。",
+      "When on, any signed-in member can use the Playground without per-user approval (blocked accounts stay blocked). Turn off to go back to per-user grants below.")));
     rl.appendChild(g);
     var b=el("button","schip"+(pgOpen?" on":""),(pgOpen?"✓ ":"")+(pgOpen?tx("開放中","Open to all"):tx("未開放","Off")));
     b.title=pgOpen?tx("點一下關閉","Click to turn off"):tx("點一下開放","Click to turn on");

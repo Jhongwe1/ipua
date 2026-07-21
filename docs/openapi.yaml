@@ -28,7 +28,7 @@ tags:
   - name: 會員
     description: 需要登入 cookie 的會員自助 API
   - name: Playground
-    description: LLM Playground（會員；體驗模式開啟時部分開放匿名）
+    description: Playground（會員；體驗模式開啟時部分開放匿名）
   - name: 管理員
     description: 需要管理金鑰（或管理員 cookie）的管理 API
   - name: Auth
@@ -817,7 +817,7 @@ paths:
   /playground:
     get:
       tags: [頁面]
-      summary: LLM Playground（會員；demo 開啟時匿名可試聊）
+      summary: Playground（會員；demo 開啟時匿名可試聊）
       responses:
         "200": { $ref: "#/components/responses/HtmlPage" }
   /news:

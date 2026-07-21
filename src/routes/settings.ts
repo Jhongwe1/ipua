@@ -94,7 +94,7 @@ const BODY = `
 
   <!-- Playground -->
   <div class="card">
-    <div class="card-title">LLM Playground</div>
+    <div class="card-title">Playground</div>
     <div class="swrow">
       <div class="g">
         <div class="t1">開放給所有登入會員</div>

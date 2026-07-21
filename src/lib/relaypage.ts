@@ -302,7 +302,7 @@ const RELAY_JS = `
     // （例 Venice 寫 https://api.venice.ai/api/v1），照貼會變成兩個 v1 → 上游回 404 且畫面查不出原因，
     // 所以標籤直接寫明。2026-07-20 實際踩過。
     var fBase=field(tx("上游 Base URL（不用加 /v1、/v1beta）","Base URL (no /v1 or /v1beta)"),"cBase",c.base_url,"https://api.openai.com");
-    // 模型名稱（必填）：一行一個；會員頁與 LLM Playground 都靠這份清單
+    // 模型名稱（必填）：一行一個；會員頁與 Playground 都靠這份清單
     var mf=el("div","field");mf.appendChild(el("label",null,tx("模型名稱（一行一個，必填）","Models (one per line, required)")));
     var fModels=el("textarea");fModels.rows=3;fModels.placeholder="gpt-4o-mini\\ngpt-4o";
     fModels.value=(c.models||[]).join("\\n");

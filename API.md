@@ -268,7 +268,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 |---|---|
 | `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**（＝正式網址主機名）。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
 | `contact_url` | 管理員對外聯絡連結（`http(s)://` 開頭，最長 300 字）；顯示在會員頁登入閘門的「聯絡我」鈕。**空字串＝移除＝不顯示聯絡鈕** |
-| `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 LLM Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
+| `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
 | `pg_default_system` | **Playground 的預設系統提示詞**（2026-07-21；最長 4000 字，超過截斷）：所有**沒有自己填** `system_prompt` 的渠道共用這一段 — 改一次等於一次換掉全部渠道，不必逐個開視窗。渠道自己填了就以渠道為準（不疊加）。**空字串＝刪鍵＝還原程式內建的 `PG_DEFAULT_SYSTEM`**；GET 的 `defaults.pg_default_system` 就是那段內建值（網頁上拿它當灰字）。**只作用在 `/playground`**，`/relay` 中轉照樣不注入任何東西。網頁在 /settings 的「Playground 預設系統提示詞」卡 |
 | `quota_relay_day` | 中轉每日請求數的**全域預設**（正整數）；`null` ＝ 回到內建預設 500。個人覆寫（§5c 的 `set_quota`）優先於這個值；**管理員完全不吃配額** |
 | `quota_pg_day` | Playground 每日訊息數的全域預設；`null` ＝ 內建預設 200 |
@@ -359,7 +359,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/prices ^
 
 ## 5c. 成員管理：/api/admin/users（分服務批准）
 
-2026-07-13 起改**分服務批准**：三個服務 `relay`（API 中轉站）、`vpn`、`playground`（LLM Playground）可以分別開關，存在 `users.services`（逗號分隔）。管理員帳號不看清單、全部服務都能用。
+2026-07-13 起改**分服務批准**：三個服務 `relay`（API 中轉站）、`vpn`、`playground`（Playground）可以分別開關，存在 `users.services`（逗號分隔）。管理員帳號不看清單、全部服務都能用。
 
 > `playground` 另有**全站開關**（`PUT /api/admin/settings` 的 `pg_open`，見 §5）：開啟時所有登入會員都能用 Playground、不看個人批准（`/api/me` 的 `services` 也會多出 playground）；關閉才回到這裡的逐人批准。relay 與 vpn 沒有全站開關。
 
@@ -384,9 +384,9 @@ curl -X PUT https://uaip.cc.cd/api/admin/prices ^
 | `kind` | `openai`（含所有 OpenAI 相容服務與本地 AI）／`anthropic`／`gemini`／`custom`；決定金鑰帶給上游的方式 |
 | `base_url` | **必填** 上游根網址，例 `https://api.openai.com` |
 | `api_key` | 上游金鑰（只有管理員 API 摸得到，回讀一律遮罩） |
-| `models` | **必填** 這個管道可用的模型名稱（陣列，或逗號／換行分隔的字串；限英數與 `. _ / : -`、上限 40 個）。會員頁與 LLM Playground 都靠這份清單 |
-| `system_prompt` | **選填** 這個管道在 **LLM Playground** 的系統提示詞（上限 8000 字，超過回 400、不截斷）。**留空＝套用站台預設**（`PUT /api/admin/settings` 的 `pg_default_system`，沒設過就是程式內建的 `PG_DEFAULT_SYSTEM`；管理員視窗那格的灰字顯示的就是當下實際會套的那段）；填了就**整段取代**預設。要一次改掉全部渠道的人設就改站台預設，不必逐個渠道填。**只作用在 `/playground`**：`/relay` API 中轉是透明代理，一律不注入任何提示詞 — 會員自己送什麼就轉什麼 |
-| `extra_body` | **選填** 合併進 **LLM Playground** 上游請求本體的額外參數，必須是 **JSON 物件字串**（上限 4000 字；存檔當下就驗，不合法回 400）。**留空＝不合併任何東西**（注意：跟 `system_prompt` 的「留空＝套預設」相反，網頁上那格的灰字只是範例）。用來處理各家專屬參數，例 `{"venice_parameters":{"include_venice_system_prompt":false}}`、OpenAI 的 `reasoning_effort`、Anthropic 的 `thinking`。`model`／`stream`／`messages`／`contents` 擋著**不給覆寫**。**只作用在 `/playground`**，`/relay` 中轉不注入 |
+| `models` | **必填** 這個管道可用的模型名稱（陣列，或逗號／換行分隔的字串；限英數與 `. _ / : -`、上限 40 個）。會員頁與 Playground 都靠這份清單 |
+| `system_prompt` | **選填** 這個管道在 **Playground** 的系統提示詞（上限 8000 字，超過回 400、不截斷）。**留空＝套用站台預設**（`PUT /api/admin/settings` 的 `pg_default_system`，沒設過就是程式內建的 `PG_DEFAULT_SYSTEM`；管理員視窗那格的灰字顯示的就是當下實際會套的那段）；填了就**整段取代**預設。要一次改掉全部渠道的人設就改站台預設，不必逐個渠道填。**只作用在 `/playground`**：`/relay` API 中轉是透明代理，一律不注入任何提示詞 — 會員自己送什麼就轉什麼 |
+| `extra_body` | **選填** 合併進 **Playground** 上游請求本體的額外參數，必須是 **JSON 物件字串**（上限 4000 字；存檔當下就驗，不合法回 400）。**留空＝不合併任何東西**（注意：跟 `system_prompt` 的「留空＝套預設」相反，網頁上那格的灰字只是範例）。用來處理各家專屬參數，例 `{"venice_parameters":{"include_venice_system_prompt":false}}`、OpenAI 的 `reasoning_effort`、Anthropic 的 `thinking`。`model`／`stream`／`messages`／`contents` 擋著**不給覆寫**。**只作用在 `/playground`**，`/relay` 中轉不注入 |
 | `enabled` | 預設 true |
 
 - `GET` → `{ rows }`，每筆含 `models`（陣列）、`has_key`、`key_hint`（金鑰一律遮罩）。
@@ -452,7 +452,7 @@ Authorization: Bearer uak-你的金鑰
 
 > 想同時吃多個機場又要保留流量顯示，就只啟用那一個機場的渠道；其餘用 `enabled:false` 暫存。
 
-## 5f. LLM Playground（/playground）
+## 5f. Playground（/playground）
 
 會員在網頁上直接試用中轉渠道裡的模型（2026-07-13 上線）。可選的模型＝各中轉管道的 `models` 清單；
 上游金鑰全程留在伺服器，會員只帶登入 cookie。對話存 D1、綁帳號、跨裝置同步。

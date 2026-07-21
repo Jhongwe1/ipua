@@ -1,4 +1,4 @@
-// GET /playground — LLM Playground（頁面本體在 src/lib/playgroundpage.ts）。
+// GET /playground — Playground（頁面本體在 src/lib/playgroundpage.ts）。
 import { playgroundPageResponse } from "../lib/playgroundpage.js";
 import type { RouteCtx } from "../types.js";
 

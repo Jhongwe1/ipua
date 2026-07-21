@@ -100,7 +100,7 @@
     panel.appendChild(el("div", "acct-hr"));
 
     // 純文字項目，不加前綴小圖示（管理員 2026-07-14 要求全站拿掉這類裝飾）
-    // 項目清單以管理員指定為準，不要擅自加（LLM playground 曾被加過又被要求移除）
+    // 項目清單以管理員指定為準，不要擅自加（Playground 曾被加過又被要求移除）
     function link(text, href) { var a = el("a", "acct-item", text); a.href = href; panel.appendChild(a); }
     link(tx("API 中轉站", "API relay"), "/relay");
     // VPN 隱形（2026-07-14）：管理員或被批准 vpn 服務的人才看得到這個入口
