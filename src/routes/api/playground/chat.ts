@@ -25,7 +25,8 @@ import {
   extractReasoning,
   extractFull,
   extractUsage,
-  chModels
+  chModels,
+  dumbCfg
 } from "../../../lib/playground.js";
 import { fastDelta } from "../../../lib/fastsse.js";
 import { checkQuota } from "../../../lib/quota.js";
@@ -106,6 +107,16 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   try {
     body = await request.json();
   } catch (e) {}
+  // Dumb mode（v2.2）：非管理員的會員一律鎖定管理員指定的渠道×模型 —
+  // 在 cleanChat 之前直接蓋掉 body（前端本來就不帶；開發者工具硬塞別的也沒用）。
+  // demo（匿名）不套用 — demo 有自己的渠道鎖定。
+  if (!demo && !isAdm && body && typeof body === "object") {
+    const dcfg = await dumbCfg(env);
+    if (dcfg.on) {
+      body.channel = dcfg.channel;
+      body.model = dcfg.model;
+    }
+  }
   const v = cleanChat(body);
   if (v.err !== undefined) return json({ error: "bad-input", hint: v.err }, 400);
 

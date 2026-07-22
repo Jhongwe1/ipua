@@ -19,6 +19,9 @@
 //   tg_bot_token / tg_chat_id（2026-07-17 /settings 頁）：Telegram 告警憑證改可存 D1 —
 //            cron tgAlertScan 讀取 **D1 優先、Cloudflare secrets 後備**；空字串＝刪鍵。
 //            token 回讀一律遮罩（tg_token_set/tg_token_hint）、audit 不落明文。
+//   dumb_mode / dumb_channel / dumb_model（v2.2 Dumb mode）：把所有會員鎖在單一「隱藏」模型 —
+//            開關＋渠道 slug＋模型名三者齊全才生效；生效時會員的模型選單消失、
+//            聊天請求一律被蓋成指定模型、對話回讀遮掉 channel/model（管理員不受限）。
 //   demo_mode / demo_channel / demo_models / demo_per_min / demo_per_ip_day / demo_global_day /
 //   demo_max_tokens（v2.0.0 Phase K 體驗模式）：
 //            demo_mode true/false；demo_channel＝鎖定的渠道 slug（**沒設＝demo 不生效**）；
@@ -44,6 +47,14 @@ const ALL_KEYS = [
   "demo_mode",
   "demo_channel",
   "demo_models",
+  // Dumb mode（2026-07-22 v2.2）：把所有會員鎖在單一隱藏模型（管理員不受限）。
+  // dumb_mode='1' 開關；dumb_channel＋dumb_model＝指定的渠道×模型 — 三者齊全才生效。
+  "dumb_mode",
+  "dumb_channel",
+  "dumb_model",
+  // VPN 對外展示（2026-07-22 v2.2）：'1'＝選單與 /vpn 頁對所有人可見（訂閱仍要批准）；
+  // 沒設＝維持 VPN 隱形（只有管理員／被批准 vpn 的人看得到）。
+  "vpn_public",
   // Telegram 告警（2026-07-17 /settings 頁上線時加）：存 D1 settings，cron 讀取時
   // **D1 優先、Cloudflare secrets（TG_BOT_TOKEN/TG_CHAT_ID）後備**。空字串＝刪鍵。
   // 跟中轉管道上游金鑰同一套資安待遇：回讀遮罩、audit 不落明文。
@@ -69,7 +80,8 @@ export async function onRequestGet(context: RouteCtx): Promise<Response> {
     const res = await env.DB.prepare(
       "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','pg_open','pg_default_system','relay_meter'," +
         "'quota_relay_day','quota_pg_day','rl_per_min','tg_bot_token','tg_chat_id'," +
-        "'demo_mode','demo_channel','demo_models','demo_per_min','demo_per_ip_day','demo_global_day','demo_max_tokens')"
+        "'demo_mode','demo_channel','demo_models','demo_per_min','demo_per_ip_day','demo_global_day','demo_max_tokens'," +
+        "'dumb_mode','dumb_channel','dumb_model','vpn_public')"
     ).all();
     const st: Record<string, string> = {};
     ((res.results || []) as { k: string; v: string }[]).forEach(function (r) {
@@ -99,6 +111,14 @@ export async function onRequestGet(context: RouteCtx): Promise<Response> {
       demo_per_ip_day: numOrNull(st.demo_per_ip_day),
       demo_global_day: numOrNull(st.demo_global_day),
       demo_max_tokens: numOrNull(st.demo_max_tokens),
+      dumb_mode: st.dumb_mode === "1",
+      dumb_active:
+        st.dumb_mode === "1" &&
+        !!String(st.dumb_channel || "").trim() &&
+        !!String(st.dumb_model || "").trim(),
+      dumb_channel: st.dumb_channel || "",
+      dumb_model: st.dumb_model || "",
+      vpn_public: st.vpn_public === "1",
       // Telegram 告警：token 絕不回明文（只回 set/hint）；chat id 不是秘密可回。
       // tg_active＝告警實際會不會發（D1 或 secrets 湊齊 token+chat 其一即可）。
       tg_chat_id: st.tg_chat_id || "",
@@ -261,6 +281,32 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
       }
       put(k, String(n));
     }
+    // —— Dumb mode（單一隱藏模型）——
+    if ("dumb_mode" in body) {
+      if (body.dumb_mode) put("dumb_mode", "1");
+      else del("dumb_mode");
+    }
+    if ("dumb_channel" in body) {
+      const dc = String(body.dumb_channel == null ? "" : body.dumb_channel)
+        .trim()
+        .toLowerCase()
+        .slice(0, 100);
+      if (!dc) del("dumb_channel");
+      else put("dumb_channel", dc);
+    }
+    if ("dumb_model" in body) {
+      // 模型名不轉小寫（上游模型名大小寫敏感）
+      const dm = String(body.dumb_model == null ? "" : body.dumb_model)
+        .trim()
+        .slice(0, 200);
+      if (!dm) del("dumb_model");
+      else put("dumb_model", dm);
+    }
+    // —— VPN 對外展示 ——
+    if ("vpn_public" in body) {
+      if (body.vpn_public) put("vpn_public", "1");
+      else del("vpn_public");
+    }
     // —— Telegram 告警（存 D1；cron 讀取 D1 優先、secrets 後備）——
     if ("tg_bot_token" in body) {
       const v = String(body.tg_bot_token == null ? "" : body.tg_bot_token)
@@ -303,7 +349,7 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
 
     // 回傳改完的現況（settings 沒鍵時顯示內建預設）
     const res = await env.DB.prepare(
-      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','pg_default_system','quota_relay_day','quota_pg_day','rl_per_min','relay_meter','demo_channel','demo_models','tg_bot_token','tg_chat_id')"
+      "SELECT k,v FROM settings WHERE k IN ('brand','contact_url','pg_default_system','quota_relay_day','quota_pg_day','rl_per_min','relay_meter','demo_channel','demo_models','tg_bot_token','tg_chat_id','dumb_mode','dumb_channel','dumb_model','vpn_public')"
     ).all();
     const st: Record<string, string> = {};
     ((res.results || []) as { k: string; v: string }[]).forEach(function (r) {
@@ -328,6 +374,14 @@ export async function onRequestPut(context: RouteCtx): Promise<Response> {
       demo_per_ip_day: dcfg.on ? dcfg.perIpDay : DEMO_DEFAULTS.demo_per_ip_day,
       demo_global_day: dcfg.on ? dcfg.globalDay : DEMO_DEFAULTS.demo_global_day,
       demo_max_tokens: dcfg.on ? dcfg.maxTokens : DEMO_DEFAULTS.demo_max_tokens,
+      dumb_mode: st.dumb_mode === "1",
+      dumb_active:
+        st.dumb_mode === "1" &&
+        !!String(st.dumb_channel || "").trim() &&
+        !!String(st.dumb_model || "").trim(),
+      dumb_channel: st.dumb_channel || "",
+      dumb_model: st.dumb_model || "",
+      vpn_public: st.vpn_public === "1",
       tg_chat_id: st.tg_chat_id || "",
       tg_token_set: !!st.tg_bot_token,
       tg_token_hint: tgHint(st.tg_bot_token),

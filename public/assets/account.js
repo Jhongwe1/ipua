@@ -37,9 +37,11 @@
     ".acct-row img{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--field);flex:0 0 auto}" +
     ".acct-row .nm{flex:1;min-width:0;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
     ".acct-row:hover{background:var(--hov)}" +
-    ".acct-contact{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:16px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:none;white-space:nowrap;transition:.15s}" +
+    ".acct-contact{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:16px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:none;white-space:nowrap;transition:.15s;align-items:center;justify-content:center}" +
     ".acct-contact:hover{border-color:var(--line2)}" +
-    "#acctSignin{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:10px;padding:11px 12px;font-size:13.5px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}" +
+    ".acct-inrow{display:flex;gap:8px;align-items:stretch}" +
+    ".acct-inrow .acct-contact{border-radius:10px;font-size:12.5px;padding:0 14px}" +
+    "#acctSignin{display:flex;flex:1;align-items:center;justify-content:center;gap:8px;background:var(--accent);color:var(--accent-fg);border:0;border-radius:10px;padding:11px 12px;font-size:13.5px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}" +
     "#acctTopSignin{background:var(--accent);color:var(--accent-fg);border-radius:17px;padding:0 14px;font-weight:700}" +
     "#acctTopSignin:hover{background:var(--accent);color:var(--accent-fg);opacity:.88}";
   var st = el("style"); st.textContent = css; document.head.appendChild(st);
@@ -54,10 +56,18 @@
   function mountLogin() {
     var host = acctHost();
     if (host && !document.getElementById("acctSignin")) {
+      var row = el("div", "acct-inrow");
       var a = el("a", null, tx("登入", "Sign in"));
       a.id = "acctSignin";
       a.href = loginUrl();
-      host.appendChild(a);
+      row.appendChild(a);
+      // 未登入也放一顆「聯絡管理員」（settings 有 contact_url 才現身）
+      var c2 = el("a", "acct-contact", tx("聯絡管理員", "Contact Admin"));
+      c2.id = "acctLoginContact";
+      c2.target = "_blank"; c2.rel = "noopener noreferrer";
+      mountContact(c2);
+      row.appendChild(c2);
+      host.appendChild(row);
     }
     var c = ctrls();
     if (c && !document.getElementById("acctTopSignin")) {
@@ -100,7 +110,7 @@
     rowBtn.appendChild(nmEl);
     rowBtn.addEventListener("click", function (e) { e.stopPropagation(); openMenu(); });
     row.appendChild(rowBtn);
-    contactA = el("a", "acct-contact", tx("聯絡我", "Contact me"));
+    contactA = el("a", "acct-contact", tx("聯絡管理員", "Contact Admin"));
     contactA.target = "_blank"; contactA.rel = "noopener noreferrer";
     mountContact(contactA);
     row.appendChild(contactA);
@@ -141,7 +151,9 @@
     if (a) a.textContent = tx("登入", "Sign in");
     var b = document.getElementById("acctTopSignin");
     if (b) b.textContent = tx("登入", "Sign in");
-    if (contactA) contactA.textContent = tx("聯絡我", "Contact me");
+    var c = document.getElementById("acctLoginContact");
+    if (c) c.textContent = tx("聯絡管理員", "Contact Admin");
+    if (contactA) contactA.textContent = tx("聯絡管理員", "Contact Admin");
     if (rowBtn) rowBtn.title = tx("帳號", "Account");
   }
   window.addEventListener("ipua:lang", onLangChange);
@@ -163,7 +175,7 @@
         try { window.dispatchEvent(new CustomEvent("ipua:me", { detail: { user: d.user } })); } catch (e) {}
         // 管理員 → 載入側欄編輯工具（若還沒被外殼的 localStorage 判斷載入）
         if (d.user.is_admin && !window.__ipuaAdminbar) {
-          var s = document.createElement("script"); s.src = "/assets/adminbar.js?v=20260722b"; document.head.appendChild(s);
+          var s = document.createElement("script"); s.src = "/assets/adminbar.js?v=20260722c"; document.head.appendChild(s);
         }
       } else {
         mountLogin();   // 提示 cookie 過期／session 失效

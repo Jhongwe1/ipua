@@ -117,6 +117,12 @@
   .sb-new svg{flex:0 0 auto;}
   .sb-sec{font-size:11.5px;font-weight:600;color:var(--sub);padding:12px 10px 5px;}
   .sb-div{border-top:1px solid var(--line);margin:10px 4px 2px;}
+  /* History 標題列（可收折，仿 ChatGPT Recents） */
+  .sb-histhd{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none;}
+  .sb-histhd::-webkit-details-marker{display:none;}
+  .sb-histhd:hover{color:var(--fg);}
+  .sb-histhd .chev{color:var(--sub);font-size:13px;line-height:1;transition:transform .15s;}
+  #sbHistGrp[open] .sb-histhd .chev{transform:rotate(90deg);}
   .sb-grp>summary{list-style:none;}
   .sb-grp>summary::-webkit-details-marker{display:none;}
   .sb-grp>summary .lb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -195,7 +201,7 @@
   <nav>
     <a id="sbNewChat" class="sb-link sb-new" href="/playground"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8 8 16l1.2-4z"/></svg><span data-i18n="sb.newchat">新交談</span></a>
     <div id="sbMenu">
-      <a class="sb-link" href="/relay" data-i18n="sb.relay">API 中轉站</a>
+      <a class="sb-link" href="/relay" data-i18n="sb.relay">API</a>
       <a class="sb-link" href="/vpn" data-i18n="sb.vpn">VPN</a>
       <details class="sb-grp" data-grp="工具"><summary class="sb-link"><span class="lb" data-i18n="sb.tools">工具</span><span class="chev" aria-hidden="true">›</span></summary><div class="grp-body">
         <a class="sb-link" href="/ip" data-nav="ip" data-i18n="tab.ip">IP 查詢</a>
@@ -207,7 +213,7 @@
       </div></details>
     </div>
     <div id="sbAdmin"></div>
-    <div id="sbHist" class="hidden"><div class="sb-div"></div><div class="sb-sec" data-i18n="sb.history">對話紀錄</div><div id="sbHistList"></div></div>
+    <div id="sbHist" class="hidden"><div class="sb-div"></div><details id="sbHistGrp" open><summary class="sb-sec sb-histhd"><span data-i18n="sb.history">對話紀錄</span><span class="chev" aria-hidden="true">›</span></summary><div id="sbHistList"></div></details></div>
   </nav>
   <div id="sbAcct" class="sb-acct"></div>
 </aside>
@@ -375,7 +381,7 @@
       "st.enabled":"啟用","st.disabled":"停用","st.bit":"{n} 位元","st.fonts":"偵測到 {n} 種字型","st.gb":"{n} GB",
       "os.bits":"({n}位)","err.query":"查詢失敗，請稍後再試",
       "sb.title":"選單","sb.content":"內容","sb.news":"新聞","sb.posts":"文章","sb.tools":"工具",
-      "sb.services":"服務","sb.relay":"API 中轉站","sb.vpn":"VPN",
+      "sb.services":"服務","sb.relay":"API","sb.vpn":"VPN",
       "sb.admin":"管理員","sb.manage":"文章管理","sb.logs":"訪客紀錄",
       "sb.newchat":"新交談","sb.history":"對話紀錄",
       "hist.rename":"改名","hist.delete":"刪除","hist.untitled":"（未命名）","hist.empty":"還沒有對話",
@@ -403,7 +409,7 @@
       "st.enabled":"Enabled","st.disabled":"Disabled","st.bit":"{n}-bit","st.fonts":"{n} fonts detected","st.gb":"{n} GB",
       "os.bits":"({n}-bit)","err.query":"Lookup failed. Please try again.",
       "sb.title":"Menu","sb.content":"Content","sb.news":"News","sb.posts":"Articles","sb.tools":"Tools",
-      "sb.services":"Services","sb.relay":"API relay","sb.vpn":"VPN",
+      "sb.services":"Services","sb.relay":"API","sb.vpn":"VPN",
       "sb.admin":"Admin","sb.manage":"Manage posts","sb.logs":"Visitor logs",
       "sb.newchat":"New chat","sb.history":"History",
       "hist.rename":"Rename","hist.delete":"Delete","hist.untitled":"(untitled)","hist.empty":"No conversations yet",
@@ -1001,6 +1007,14 @@
     });
     // 群組（工具/內容…）展開狀態記憶：靜態內建的兩組先綁
     $$(".sb-grp").forEach(restoreGrp);
+    // History 收折狀態（與群組相反：預設展開）
+    var hg = document.getElementById("sbHistGrp");
+    if(hg){
+      try{ if(localStorage.getItem("ipua-hist") === "0") hg.open = false; }catch(e){}
+      hg.addEventListener("toggle", function(){
+        try{ localStorage.setItem("ipua-hist", hg.open ? "1" : "0"); }catch(e){}
+      });
+    }
     applySb();
   }
   function restoreGrp(g){
@@ -1014,10 +1028,13 @@
   }
 
   /* ================= 共用彈出選單（頭像／History「…」；account.js 靠 window.SBPOP 用） ================= */
-  var curPop = null;
-  function closePop(){ if(curPop){ curPop.remove(); curPop = null; } }
+  /* 同一顆按鈕再點一次＝收回（toggle）：記住 curAnchor，document 的關閉監聽也放過 anchor 本身 */
+  var curPop = null, curAnchor = null;
+  function closePop(){ if(curPop){ curPop.remove(); curPop = null; curAnchor = null; } }
   function openPop(anchor, build, alignUp){
+    if(curPop && curAnchor === anchor){ closePop(); return null; }
     closePop();
+    curAnchor = anchor;
     var p = document.createElement("div"); p.className = "pop";
     build(p);
     document.body.appendChild(p);
@@ -1034,7 +1051,7 @@
     curPop = p;
     return p;
   }
-  document.addEventListener("click", function(e){ if(curPop && !curPop.contains(e.target)) closePop(); }, true);
+  document.addEventListener("click", function(e){ if(curPop && !curPop.contains(e.target) && !(curAnchor && curAnchor.contains(e.target))) closePop(); }, true);
   document.addEventListener("keydown", function(e){ if(e.key === "Escape") closePop(); });
   window.addEventListener("resize", closePop);
   function popItem(p, text, fn, danger){
@@ -1244,7 +1261,7 @@
     try{
       if(localStorage.getItem("ipua-logs-token") || /^(localhost|127\.)/.test(location.hostname)){
         var abs = document.createElement("script");
-        abs.src = "/assets/adminbar.js?v=20260722b";
+        abs.src = "/assets/adminbar.js?v=20260722c";
         document.head.appendChild(abs);
       }
     }catch(e){}
@@ -1259,6 +1276,6 @@
   else start();
 })();
 </script>
-<script src="/assets/account.js?v=20260722b"></script>
+<script src="/assets/account.js?v=20260722c"></script>
 </body>
 </html>

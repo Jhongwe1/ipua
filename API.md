@@ -171,9 +171,11 @@ curl -X POST https://uaip.cc.cd/api/admin/articles ^
 
 `custom:false` 表示還沒自訂過，回的是內建預設選單。
 
+VPN 過濾（v2.2）：跟頁面外殼同一套規則 — `/vpn` 項只回給「管理員／被批准 vpn 服務的登入會員」，或管理員開了 `vpn_public`（對外展示）。帶管理金鑰（`Authorization: Bearer`）呼叫一律回**未過濾**的完整清單（選單編輯器要用）。
+
 ### GET /api/settings — 網站公開設定
 
-回 `{ brand, custom, pg_open, contact_url, demo }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設（＝正式網址主機名）。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。`contact_url`＝管理員聯絡連結（會員頁登入閘門的「聯絡我」鈕；空字串＝沒設定、前端不顯示該鈕）。`demo`＝Playground 體驗模式是否開放匿名試聊（布林；渠道與額度細節不公開）。
+回 `{ brand, custom, pg_open, contact_url, demo }`。brand＝站名（用在分頁標題、og:site_name、JSON-LD、RSS 頻道名）；`custom:false` 表示用內建預設（＝正式網址主機名）。`pg_open`＝Playground 是否對所有登入會員開放（見 §5 的網站設定）。`contact_url`＝管理員聯絡連結（會員頁登入閘門的「聯絡管理員」鈕；空字串＝沒設定、前端不顯示該鈕）。`demo`＝Playground 體驗模式是否開放匿名試聊（布林；渠道與額度細節不公開）。
 
 ## 5. 管理員 API 詳細
 
@@ -267,7 +269,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 | 鍵 | 說明 |
 |---|---|
 | `brand` | 站名，最長 60 字；**傳空字串＝還原內建預設**（＝正式網址主機名）。改完立即生效（分頁標題、og:site_name、JSON-LD、RSS 頻道名；主站首頁的「IP·UA 查詢」標題不受影響） |
-| `contact_url` | 管理員對外聯絡連結（`http(s)://` 開頭，最長 300 字）；顯示在會員頁登入閘門的「聯絡我」鈕。**空字串＝移除＝不顯示聯絡鈕** |
+| `contact_url` | 管理員對外聯絡連結（`http(s)://` 開頭，最長 300 字）；顯示在會員頁登入閘門的「聯絡管理員」鈕。**空字串＝移除＝不顯示聯絡鈕** |
 | `pg_open` | `true`／`false` — **Playground 開放給所有登入會員**：開啟後任何登入會員不用逐一批准就能用 Playground（被封鎖的帳號照樣擋；只影響 playground，relay 與 vpn 照舊看個人批准）。`false`＝回到逐人批准。網頁上在 /members 頁最上方也有這顆開關 |
 | `pg_default_system` | **Playground 的預設系統提示詞**（2026-07-21；最長 4000 字，超過截斷）：所有**沒有自己填** `system_prompt` 的渠道共用這一段 — 改一次等於一次換掉全部渠道，不必逐個開視窗。渠道自己填了就以渠道為準（不疊加）。**空字串＝刪鍵＝還原程式內建的 `PG_DEFAULT_SYSTEM`**；GET 的 `defaults.pg_default_system` 就是那段內建值（網頁上拿它當灰字）。**只作用在 `/playground`**，`/relay` 中轉照樣不注入任何東西。網頁在 /settings 的「Playground 預設系統提示詞」卡 |
 | `quota_relay_day` | 中轉每日請求數的**全域預設**（正整數）；`null` ＝ 回到內建預設 500。個人覆寫（§5c 的 `set_quota`）優先於這個值；**管理員完全不吃配額** |
@@ -283,6 +285,10 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 | `demo_per_ip_day` | 每 IP 每日上限；`null`＝內建預設 10 |
 | `demo_global_day` | **全站**每日上限（燒錢保險）；`null`＝內建預設 200 |
 | `demo_max_tokens` | 體驗模式每則回覆的 token 上限；**`null`（留空）＝不限** — 跟會員路徑一樣不對上游設 `max_tokens`（anthropic 例外：那家必填，維持 4096）。要硬性壓每則成本才填正整數 |
+| `dumb_mode` | `true`／`false` — **Dumb mode**（2026-07-22 v2.2）：把所有會員鎖在單一「隱藏」模型。開啟且 `dumb_channel`＋`dumb_model` 都設好才生效（GET 回 `dumb_active` 表示實際生效與否）。生效時非管理員會員：`/api/playground/models` 只回 `{ rows:[], dumb:true }`、聊天請求的 channel/model 一律被伺服器蓋成指定值、對話列表與內頁的 channel/model 遮空 — 會員不知道也改不了正在用什麼模型。**管理員不受限**；不影響 API 中轉與體驗模式。網頁在 /settings 的「Playground」卡 |
+| `dumb_channel` | Dumb mode 鎖定的渠道 slug（空字串＝刪鍵＝不生效） |
+| `dumb_model` | Dumb mode 鎖定的模型名（要在該渠道的模型清單裡；空字串＝刪鍵） |
+| `vpn_public` | `true`／`false` — **VPN 對外展示**（2026-07-22 v2.2）：開啟後側邊欄選單與 /vpn 頁對**所有訪客**可見（未批准者看到登入／等待批准閘門；訂閱本身仍要逐人批准 vpn 服務）。`false`（預設）＝維持 VPN 隱形：選單不渲染、/vpn 裝成不存在。網頁在 /settings 的「VPN」卡 |
 
 ```bat
 curl -X PUT https://uaip.cc.cd/api/admin/settings ^
@@ -420,7 +426,7 @@ Authorization: Bearer uak-你的金鑰
 - 路徑照上游原本的填（中轉只換金鑰不改路徑）；回應串流直通。`model` 參數也原樣轉發 — 填管道 `models` 清單裡的名稱即可。
 - 未帶金鑰 401、金鑰無效 401、帳號未被批准 relay 服務 403、管道不存在或停用 404、上游連不上 502。
 - **配額（2026-07-14）**：超過每日額度回 `429 { error:"quota-exceeded", hint, used, limit, reset, contact_url? }`、請求太快回 `429 { error:"rate-limited", … }`，都帶 `Retry-After` 標頭（秒）。額度＝個人覆寫 → 全域設定 → 內建預設（中轉 500/日、每分鐘 30）；**管理員完全豁免**。今日用量顯示在 /relay 頁與 `GET /api/me` 的 `usage`。
-  - **`contact_url`（2026-07-21）**：管理員有設聯絡連結（`PUT /api/admin/settings` 的 `contact_url`，跟未登入閘門那顆「聯絡我」鈕同一條）時，日額度 429 的 `hint` 尾端會接上該網址，並多回一個 `contact_url` 欄位給前端做成可點的連結（沒設＝兩者都不出現，文案維持原樣）。「請聯絡管理員」卻不給聯絡方式等於叫人自己想辦法。**每分鐘的 `rate-limited` 不接** — 那是等一下就好、不必找人。體驗模式的日額度 429（`demo-rate-limited`／`demo-quota-exceeded`）2026-07-21 起照同一套，每分鐘那條同樣不接。
+  - **`contact_url`（2026-07-21）**：管理員有設聯絡連結（`PUT /api/admin/settings` 的 `contact_url`，跟未登入閘門那顆「聯絡管理員」鈕同一條）時，日額度 429 的 `hint` 尾端會接上該網址，並多回一個 `contact_url` 欄位給前端做成可點的連結（沒設＝兩者都不出現，文案維持原樣）。「請聯絡管理員」卻不給聯絡方式等於叫人自己想辦法。**每分鐘的 `rate-limited` 不接** — 那是等一下就好、不必找人。體驗模式的日額度 429（`demo-rate-limited`／`demo-quota-exceeded`）2026-07-21 起照同一套，每分鐘那條同樣不接。
 - **計量**：伺服器順流掃「回應」尾端的 `usage`／`model` 記進 req_log（延遲、token 數；研究數據用）— 只看上游回應、絕不緩衝或解析你送出的內容；會員中斷連線時上游立即取消。
 
 ## 5e. VPN 訂閱（多渠道）
@@ -459,6 +465,8 @@ Authorization: Bearer uak-你的金鑰
 驗證：登入 cookie（要有 `playground` 服務，**或**管理員開了 `pg_open` 全員開放，見 §5）**或** `Authorization: Bearer <管理金鑰>`（以管理員帳號的身分操作，方便 curl／agent 測試）。
 
 **體驗模式（2026-07-17 v2.0.0，ADR-0009）**：管理員開 `demo_mode`＋設 `demo_channel` 後，**完全未登入**的訪客也能打 `GET /api/playground/models`（只回 demo 那一組、渠道顯示名固定「體驗模式」）與 `POST /api/playground/chat`（SSE 第一筆事件是 `{conv,title?,demo:true}` — `demo:true` 是給前端的旗標「別去動對話列表」，`conv` 照給，前端靠它把同一頁的後續訊息串成同一則）。限制：渠道與模型鎖白名單、輸入整包 4000 字、`demo_max_tokens` 有填才壓回覆長度；**對話會存進資料庫**（2026-07-21 起）但掛在 `demo:public` 名下、**只有管理員的 `/api/admin/conversations` 看得到**，訪客沒有任何讀取管道；fail-closed 限流（每 IP 分鐘/日＋全站日；超額 429 `demo-rate-limited`／`demo-quota-exceeded`，限流器故障 503 `demo-unavailable`）。**日額度用完的兩種 429 會附 `contact_url`**（管理員有設的話；文案不提 IP，`hint` 尾端也接同一條網址）— 跟會員配額同一套，見 §6 的 `contact_url`；每分鐘那條不附（等一下就好）。
+
+**Dumb mode（2026-07-22 v2.2）**：管理員開 `dumb_mode`＋指定 `dumb_channel`×`dumb_model`（見 §5 網站設定）後，**非管理員會員**被鎖在那一個模型且看不到它是什麼：`models` 只回 `{ rows:[], dumb:true }`（前端據此隱藏模型選單、聊天不帶 channel/model）；`chat` 的 channel/model 一律被伺服器蓋成指定值；對話列表與內頁的 `channel`/`model` 欄位遮成空字串。管理員與 API 中轉、體驗模式都不受影響。
 
 - `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
 - `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。**管理員要看全站所有人的對話**看 §5 的 `/api/admin/conversations`（或 /logs 的「總對話紀錄」分頁）。

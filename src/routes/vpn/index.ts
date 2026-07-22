@@ -36,7 +36,8 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
 
   // 隱形閘門：無權限 → 回根路徑的靜態 SPA（200），行為與「不存在的路徑」的 SPA fallback 相同。
   // env.ASSETS.fetch 直接拿靜態檔、不會再進路由（不會撞 src/routes/index.ts 的 302）。
-  if (!canSeeVpn(user, env)) {
+  // v2.2：管理員把 vpn_public 打開＝對外展示 — 未授權者放行進頁面（會看到登入／待批准閘門）。
+  if (!canSeeVpn(user, env) && !chrome.vpnPublic) {
     try {
       return await env.ASSETS.fetch(new Request(new URL("/", request.url), { headers: request.headers }));
     } catch (e) {

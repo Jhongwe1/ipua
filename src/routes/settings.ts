@@ -80,7 +80,7 @@ const BODY = `
     <div class="field">
       <label for="fContact">聯絡連結</label>
       <input id="fContact" type="text" autocomplete="off" placeholder="https://…（Telegram、mailto 頁、表單…）">
-      <p class="hint" style="margin-bottom:0">顯示在會員頁登入閘門的「聯絡我」鈕。留空＝不顯示。</p>
+      <p class="hint" style="margin-bottom:0">顯示在側邊欄左下角與會員頁登入閘門的「聯絡管理員」鈕。留空＝不顯示。</p>
     </div>
     <div class="saverow"><button id="saveSite" class="primary" type="button">儲存</button><span id="msgSite" class="savemsg"></span></div>
   </div>
@@ -143,6 +143,33 @@ const BODY = `
       </div>
       <p class="hint">數字欄留空＝用內建預設（欄位裡的灰字）。</p>
       <div class="saverow"><button id="saveDemo" class="primary" type="button">儲存體驗模式設定</button><span id="msgDemo" class="savemsg"></span></div>
+    </div>
+    <div class="swrow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+      <div class="g">
+        <div class="t1">Dumb mode（鎖定單一隱藏模型）</div>
+        <div class="t2">開啟後所有會員在 Playground 只能用下面指定的模型：模型選單整個消失、對話紀錄也查不到模型名稱 — 會員不知道也改不了正在用什麼（你自己不受限，照常有完整選單）。<b>要同時選好模型才會生效</b>；不影響 API 中轉與體驗模式。</div>
+        <div id="dumbState" class="t2"></div>
+      </div>
+      <button id="tglDumb" class="tgl" type="button">—</button>
+    </div>
+    <div style="margin-top:8px">
+      <div class="field">
+        <label for="fDumbModel">指定模型（渠道 × 模型，必選才生效）</label>
+        <select id="fDumbModel"><option value="">（未選 — Dumb mode 不生效）</option></select>
+      </div>
+      <div class="saverow"><button id="saveDumb" class="primary" type="button">儲存 Dumb mode 設定</button><span id="msgDumb" class="savemsg"></span></div>
+    </div>
+  </div>
+
+  <!-- VPN 顯示（2026-07-22 v2.2） -->
+  <div class="card">
+    <div class="card-title">VPN</div>
+    <div class="swrow">
+      <div class="g">
+        <div class="t1">對外展示</div>
+        <div class="t2">開啟＝側邊欄選單與 /vpn 頁對<b>所有訪客</b>可見（沒批准的人進去會看到登入／等待批准畫面；訂閱本身還是要你批准才能用）。關閉＝維持隱形：只有你和被批准 vpn 服務的會員知道這個服務存在。</div>
+      </div>
+      <button id="tglVpnPub" class="tgl" type="button">—</button>
     </div>
   </div>
 
@@ -313,8 +340,12 @@ const PAGE_JS = `
     $("fContact").value=st.contact_url||"";
     paintTgl($("tglPgOpen"),st.pg_open);
     paintTgl($("tglDemo"),st.demo_mode);
+    paintTgl($("tglDumb"),st.dumb_mode);
+    paintTgl($("tglVpnPub"),st.vpn_public);
     paintTgl($("tglMeter"),st.relay_meter);
     demoStateNote();
+    dumbStateNote();
+    fillDumbSel();
     var sel=$("fDemoCh");
     while(sel.options.length>1)sel.remove(1);
     channels.forEach(function(c){
@@ -365,6 +396,33 @@ const PAGE_JS = `
     else if(st.demo_mode&&st.demo_channel){n.textContent="✓ 生效中（渠道："+st.demo_channel+"）。";}
     else n.textContent="";
   }
+  function dumbStateNote(){
+    var n=$("dumbState");
+    if(st.dumb_mode&&!(st.dumb_channel&&st.dumb_model)){n.textContent="⚠ 開關已開但還沒指定模型 — 目前不會生效。";}
+    else if(st.dumb_mode){n.textContent="✓ 生效中（會員被鎖定在 "+st.dumb_model+"｜"+st.dumb_channel+"，且看不到這個資訊）。";}
+    else n.textContent="";
+  }
+  // Dumb mode 的模型下拉：列出所有啟用渠道的所有模型（值＝slug|model）
+  function fillDumbSel(){
+    var sel=$("fDumbModel");
+    while(sel.options.length>1)sel.remove(1);
+    var cur=(st.dumb_channel&&st.dumb_model)?(st.dumb_channel+"|"+st.dumb_model):"";
+    var has=false;
+    channels.forEach(function(c){
+      (c.models||[]).forEach(function(m){
+        var o=document.createElement("option");
+        o.value=c.slug+"|"+m;
+        o.textContent=m+"｜"+c.name+(c.enabled?"":"（渠道停用中）");
+        if(o.value===cur){o.selected=true;has=true;}
+        sel.appendChild(o);
+      });
+    });
+    if(cur&&!has){
+      var o2=document.createElement("option");
+      o2.value=cur;o2.textContent=st.dumb_model+"｜"+st.dumb_channel+"（已不存在）";o2.selected=true;
+      sel.appendChild(o2);
+    }
+  }
 
   /* ===== 開關（點了立即儲存）===== */
   function bindTgl(btn,key,curFn,after){
@@ -375,14 +433,18 @@ const PAGE_JS = `
       api("/api/admin/settings",{method:"PUT",json:body}).then(function(){
         if(key==="pg_open")st.pg_open=next;
         if(key==="demo_mode")st.demo_mode=next;
+        if(key==="dumb_mode")st.dumb_mode=next;
+        if(key==="vpn_public")st.vpn_public=next;
         if(key==="relay_meter")st.relay_meter=next;
-        paintTgl(btn,next);demoStateNote();
+        paintTgl(btn,next);demoStateNote();dumbStateNote();
         flash("已"+(next?"開啟":"關閉"));
       }).catch(function(e){btn.disabled=false;err(e);});
     });
   }
   bindTgl($("tglPgOpen"),"pg_open",function(){return st.pg_open;});
   bindTgl($("tglDemo"),"demo_mode",function(){return st.demo_mode;});
+  bindTgl($("tglDumb"),"dumb_mode",function(){return st.dumb_mode;});
+  bindTgl($("tglVpnPub"),"vpn_public",function(){return st.vpn_public;});
   bindTgl($("tglMeter"),"relay_meter",function(){return st.relay_meter;});
 
   /* ===== 各卡儲存 ===== */
@@ -421,6 +483,15 @@ const PAGE_JS = `
     saving($("saveDemo"),$("msgDemo"),
       api("/api/admin/settings",{method:"PUT",json:body}),
       function(){st.demo_channel=body.demo_channel;st.demo_models=body.demo_models;demoStateNote();});
+  });
+
+  // Dumb mode：下拉值＝"渠道|模型"；未選＝清掉兩鍵（不生效）
+  $("saveDumb").addEventListener("click",function(){
+    var v=$("fDumbModel").value,pi=v.indexOf("|");
+    var body={dumb_channel:pi<0?"":v.slice(0,pi),dumb_model:pi<0?"":v.slice(pi+1)};
+    saving($("saveDumb"),$("msgDumb"),
+      api("/api/admin/settings",{method:"PUT",json:body}),
+      function(){st.dumb_channel=body.dumb_channel;st.dumb_model=body.dumb_model;dumbStateNote();});
   });
 
   // 預設系統提示詞：空字串照送（伺服器收到空＝刪鍵＝還原內建），存完把回傳值寫回 st

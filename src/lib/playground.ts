@@ -49,6 +49,36 @@ export async function pgDefaultSystem(env: Env): Promise<string> {
   return PG_DEFAULT_SYSTEM;
 }
 
+// ===== Dumb mode（2026-07-22 v2.2）：把所有會員鎖在管理員指定的單一「隱藏」模型 =====
+// settings 三鍵：dumb_mode='1' 開關、dumb_channel、dumb_model — 三者齊全才生效。
+// 生效時（管理員自己不受限）：
+//   /api/playground/models 對會員回 { rows:[], dumb:true }（看不到任何模型）
+//   /api/playground/chat 直接把請求的 channel/model 蓋成指定值（開發者工具亂改也沒用）
+//   對話列表與內頁回讀時把 channel/model 遮掉（會員從 API 也挖不到正在用什麼）
+export interface DumbCfg {
+  on: boolean;
+  channel: string;
+  model: string;
+}
+
+export async function dumbCfg(env: Env): Promise<DumbCfg> {
+  const off: DumbCfg = { on: false, channel: "", model: "" };
+  try {
+    if (!env || !env.DB) return off;
+    const rs = await env.DB.prepare(
+      "SELECT k,v FROM settings WHERE k IN ('dumb_mode','dumb_channel','dumb_model')"
+    ).all();
+    const st: Record<string, string> = {};
+    for (const r of (rs.results || []) as { k: string; v: string }[]) st[r.k] = r.v;
+    const channel = String(st.dumb_channel || "").trim();
+    const model = String(st.dumb_model || "").trim();
+    if (st.dumb_mode !== "1" || !channel || !model) return off;
+    return { on: true, channel: channel, model: model };
+  } catch (e) {
+    return off;
+  }
+}
+
 // 驗證來訪者：登入 cookie（一般會員，寫入類請求過 Origin 檢查）
 // 或 Authorization: Bearer LOGS_TOKEN（管理員金鑰 → 以管理員帳號的身分操作，方便 curl／agent 測試）。
 // 回 { user } 或 { err: Response }。

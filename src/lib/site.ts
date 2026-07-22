@@ -15,7 +15,7 @@ export const VERSION = "2.2.0"; // 站台版本（/api/health 回報；發佈時
 // 收斂前同時存在 account.js?v=20260717b、logs.js?v=20260721，以及 admin.js／marked.js
 // 「根本沒帶」三種狀態 —— 後者等於那兩支的更新永遠要等快取自然過期。
 // 一個常數、一個 assetSrc()，這一整類問題就不會再發生。
-export const ASSET_V = "20260722b";
+export const ASSET_V = "20260722c";
 export function assetSrc(file: string): string {
   return "/assets/" + file + "?v=" + ASSET_V;
 }
@@ -51,7 +51,7 @@ export interface MenuItem {
 export const DEFAULT_MENU: MenuItem[] = [
   { kind: "section", label: "服務", label_en: "Services", url: "" },
   { kind: "link", label: "Playground", label_en: "Playground", url: "/playground" },
-  { kind: "link", label: "API 中轉站", label_en: "API relay", url: "/relay" },
+  { kind: "link", label: "API", label_en: "API", url: "/relay" },
   { kind: "link", label: "VPN", label_en: "VPN", url: "/vpn" },
   { kind: "section", label: "工具", label_en: "Tools", url: "" },
   { kind: "link", label: "IP 查詢", label_en: "IP Lookup", url: "/ip" },
@@ -61,29 +61,39 @@ export const DEFAULT_MENU: MenuItem[] = [
   { kind: "link", label: "文章", label_en: "Articles", url: "/articles" }
 ];
 
-// 站台外觀資料（側邊欄選單＋站名）：一次 D1 batch 讀回。
+// 站台外觀資料（側邊欄選單＋站名＋VPN 展示開關）：一次 D1 batch 讀回。
 // 資料表還沒建立、查詢失敗都退回內建預設 — 資料庫出狀況網站外殼照常運作。
+// vpnPublic（v2.2）＝settings 表 vpn_public='1'：VPN 對外展示（選單與 /vpn 頁對所有人可見；
+// 訂閱本身仍要批准）。搭進本來就要跑的 settings 查詢，不多花一次 D1 往返。
 export interface Chrome {
   brand: string;
   menu: MenuItem[];
   custom: boolean;
+  vpnPublic: boolean;
 }
 
 export async function getChrome(env: Env, request: Request): Promise<Chrome> {
-  const chrome: Chrome = { brand: siteBrand(env, request), menu: DEFAULT_MENU, custom: false };
+  const chrome: Chrome = {
+    brand: siteBrand(env, request),
+    menu: DEFAULT_MENU,
+    custom: false,
+    vpnPublic: false
+  };
   if (!env || !env.DB) return chrome;
   try {
     const res = await env.DB.batch([
       env.DB.prepare("SELECT kind,label,label_en,url FROM menu ORDER BY pos, id"),
-      env.DB.prepare("SELECT v FROM settings WHERE k='brand'")
+      env.DB.prepare("SELECT k,v FROM settings WHERE k IN ('brand','vpn_public')")
     ]);
     const rows = (res[0].results || []) as unknown as MenuItem[];
     if (rows.length) {
       chrome.menu = rows;
       chrome.custom = true;
     }
-    const b = (res[1].results || [])[0] as { v?: string } | undefined;
-    if (b && b.v) chrome.brand = b.v;
+    for (const r of (res[1].results || []) as { k: string; v: string }[]) {
+      if (r.k === "brand" && r.v) chrome.brand = r.v;
+      if (r.k === "vpn_public" && r.v === "1") chrome.vpnPublic = true;
+    }
   } catch (e) {
     /* 表未建立／查詢失敗 → 預設 */
   }
@@ -300,8 +310,11 @@ export function pageShell(o: PageShellOpts): string {
     '  <div id="sbMenu">\n' +
     menuHtml(menu, o.activePath) +
     '  </div>\n  <div id="sbAdmin"></div>\n' +
-    // History（playground 歷史對話）：外殼腳本在確認登入＋有 playground 服務後才顯示並填入
-    '  <div id="sbHist" class="hidden"><div class="sb-div"></div><div class="sb-sec" data-i18n="sb.history">對話紀錄</div><div id="sbHistList"></div></div>\n' +
+    // History（playground 歷史對話）：外殼腳本在確認登入＋有 playground 服務後才顯示並填入。
+    // 可收折（仿 ChatGPT Recents）：預設展開，狀態記 localStorage ipua-hist。
+    '  <div id="sbHist" class="hidden"><div class="sb-div"></div><details id="sbHistGrp" open>' +
+    '<summary class="sb-sec sb-histhd"><span data-i18n="sb.history">對話紀錄</span><span class="chev" aria-hidden="true">›</span></summary>' +
+    '<div id="sbHistList"></div></details></div>\n' +
     "  </nav>\n" +
     // 左下角帳號區：account.js 渲染（未登入＝登入鈕；登入＝頭像＋名字＋聯絡我）
     '  <div id="sbAcct" class="sb-acct"></div>\n' +
@@ -364,6 +377,12 @@ const SHELL_CSS = `
   .sb-new svg{flex:0 0 auto}
   .sb-sec{font-size:11.5px;font-weight:600;color:var(--sub);padding:12px 10px 5px}
   .sb-div{border-top:1px solid var(--line);margin:10px 4px 2px}
+  /* History 標題列（可收折，仿 ChatGPT Recents） */
+  .sb-histhd{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none}
+  .sb-histhd::-webkit-details-marker{display:none}
+  .sb-histhd:hover{color:var(--fg)}
+  .sb-histhd .chev{color:var(--sub);font-size:13px;line-height:1;transition:transform .15s}
+  #sbHistGrp[open] .sb-histhd .chev{transform:rotate(90deg)}
   /* 可展開群組（Tools / Content…） */
   .sb-grp>summary{list-style:none}
   .sb-grp>summary::-webkit-details-marker{display:none}
@@ -691,11 +710,24 @@ const SHELL_JS = `
       try{localStorage.setItem(key,g.open?"1":"0")}catch(e){}
     });
   })(grps[gi]);
-  /* --- 共用彈出選單管理（頭像／History…／模型選單共用一套定位與關閉邏輯） --- */
-  var curPop=null;
-  function closePop(){if(curPop){curPop.remove();curPop=null;}}
+  /* --- History 收折狀態（與群組相反：預設展開） --- */
+  var hg=document.getElementById("sbHistGrp");
+  if(hg){
+    try{if(localStorage.getItem("ipua-hist")==="0")hg.open=false}catch(e){}
+    hg.addEventListener("toggle",function(){
+      try{localStorage.setItem("ipua-hist",hg.open?"1":"0")}catch(e){}
+    });
+  }
+  /* --- 共用彈出選單管理（頭像／History…／模型選單共用一套定位與關閉邏輯）。
+         同一顆按鈕再點一次＝收回（toggle）：記住 curAnchor，
+         document 的關閉監聽也要放過 anchor 本身，不然按鈕的 click 還沒進來選單就先被關掉、
+         接著又被重開 — 永遠收不回去。 --- */
+  var curPop=null,curAnchor=null;
+  function closePop(){if(curPop){curPop.remove();curPop=null;curAnchor=null;}}
   function openPop(anchor,build,alignUp){
+    if(curPop&&curAnchor===anchor){closePop();return null;}
     closePop();
+    curAnchor=anchor;
     var p=document.createElement("div");p.className="pop";
     build(p);
     document.body.appendChild(p);
@@ -713,7 +745,7 @@ const SHELL_JS = `
     return p;
   }
   document.addEventListener("click",function(e){
-    if(curPop&&!curPop.contains(e.target))closePop();
+    if(curPop&&!curPop.contains(e.target)&&!(curAnchor&&curAnchor.contains(e.target)))closePop();
   },true);
   document.addEventListener("keydown",function(e){if(e.key==="Escape")closePop()});
   window.addEventListener("resize",closePop);

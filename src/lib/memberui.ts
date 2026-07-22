@@ -92,7 +92,7 @@ export const MEMBER_JS = `
   }
   // url：呼叫端已經知道網址時直接給（例額度 429 回的 contact_url）— 省掉一次 /api/settings。
   function contactBtn(url){
-    var a=el("a","gcontact",tx("聯絡我","Contact me"));
+    var a=el("a","gcontact",tx("聯絡管理員","Contact Admin"));
     a.target="_blank";a.rel="noopener noreferrer";a.style.display="none";
     if(url){a.href=url;a.style.display="";return a;}
     siteSettings().then(function(s){

@@ -39,7 +39,9 @@ export async function getChromeFor(
     chrome: {
       brand: chrome.brand,
       custom: chrome.custom,
-      menu: filterMenu(chrome.menu, canSeeVpn(user, env))
+      vpnPublic: chrome.vpnPublic,
+      // v2.2：管理員可開 vpn_public（settings）讓 VPN 對外展示 — 開著就不過濾
+      menu: filterMenu(chrome.menu, chrome.vpnPublic || canSeeVpn(user, env))
     },
     user: user
   };

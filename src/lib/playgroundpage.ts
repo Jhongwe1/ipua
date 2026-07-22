@@ -169,6 +169,7 @@ const PG_JS = `
   var STOP_ICON='<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>';
   var me=null,groups=[],cur=null,msgs=[];
   var demoMode=false;  // 體驗模式（未登入＋管理員開 demo）：無歷史（對話只有管理員看得到）
+  var dumbMode=false;  // Dumb mode（v2.2）：模型被管理員鎖定且隱藏 — 沒有模型選單、送出不帶模型
   var streaming=false,aborter=null;
   var UI={};
   var model="";        // 目前選的模型（"channelSlug|modelName"）
@@ -245,6 +246,7 @@ const PG_JS = `
       if(!hasSvc()){paint();return;}
       return api("/api/playground/models").then(function(r){
         groups=r.rows||[];
+        dumbMode=!!r.dumb;   // 模型被鎖定且隱藏：清單是空的但照樣能聊
         paint();
         /* 側欄 History 由外殼載入；#c=<id> 進來（他頁點歷史）就直接打開那筆 */
         var m=location.hash.match(/^#c=(.+)$/);
@@ -262,6 +264,7 @@ const PG_JS = `
     return out;
   }
   function ensureModel(){
+    if(dumbMode){model="";return;}   // 鎖定模式：前端不知道也不需要知道模型
     var list=allModels();
     if(!list.length){model="";return;}
     var s=savedModel();
@@ -274,10 +277,12 @@ const PG_JS = `
   function updateTitle(){
     var b=document.getElementById("pgTitle");
     if(!b)return;
+    if(dumbMode){b.innerHTML="Chat";b.title="";b.style.cursor="default";return;}
     b.innerHTML="Chat "+(modelName()?'<span class="mn">'+esc(modelName())+"</span> ":"")+'<span class="cv">\\u25bc</span>';
     b.title=tx("選擇模型","Choose a model");
   }
   function modelMenu(){
+    if(dumbMode)return;   // 鎖定模式沒有模型選單
     var b=document.getElementById("pgTitle");
     if(!b||!window.SBPOP)return;
     var list=allModels();
@@ -368,7 +373,7 @@ const PG_JS = `
     UI.hero=el("div","pg-hero");
     var hh=el("h2",null,tx("有什麼我能幫上的？","How can I help?"));
     UI.hero.appendChild(hh);
-    if(!groups.length){
+    if(!groups.length&&!dumbMode){
       UI.hero.appendChild(el("p",null,
         demoMode?tx("體驗模式暫時沒有可用的模型，請稍後再來或登入。","Demo mode has no models available right now.")
         :tx("管理員還沒設定任何模型。","The site owner hasn't configured any models yet.")+(me&&me.is_admin?tx("到「API 中轉站」的管道管理幫渠道加上模型名稱即可。"," Add model names to a channel in the relay admin.") : "")));
@@ -385,7 +390,7 @@ const PG_JS = `
     UI.ta=el("textarea","pg-ta");
     UI.ta.rows=1;
     UI.ta.placeholder=tx("詢問任何問題","Ask anything");
-    UI.ta.disabled=!groups.length;
+    UI.ta.disabled=!groups.length&&!dumbMode;
     UI.ta.addEventListener("input",autoGrow);
     UI.ta.addEventListener("keydown",function(e){
       if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&!coarse){e.preventDefault();send();}
@@ -394,7 +399,7 @@ const PG_JS = `
     UI.send=el("button","pg-send");
     UI.send.innerHTML=SEND_ICON;
     UI.send.title=tx("送出","Send");
-    UI.send.disabled=!groups.length;
+    UI.send.disabled=!groups.length&&!dumbMode;
     UI.send.addEventListener("click",function(){
       if(streaming){if(aborter)aborter.abort();return;}
       send();
@@ -536,8 +541,9 @@ const PG_JS = `
     if(streaming)return;
     var text=UI.ta.value.replace(/\\s+$/,"");
     if(!text.trim())return;
-    if(!model){MU.flash(tx("先選一個模型","Pick a model first"));return;}
-    var pi=model.indexOf("|"),channel=model.slice(0,pi),mname=model.slice(pi+1);
+    if(!model&&!dumbMode){MU.flash(tx("先選一個模型","Pick a model first"));return;}
+    // Dumb mode：channel/model 留空 — 伺服器端會蓋成管理員指定的值
+    var pi=model.indexOf("|"),channel=pi<0?"":model.slice(0,pi),mname=pi<0?"":model.slice(pi+1);
 
     msgs.push({role:"user",content:text});
     setEmpty();

@@ -3,7 +3,8 @@
 // Phase K：demo 開著時，匿名訪客拿得到「demo 渠道 × 白名單模型」這一組（渠道顯示名遮成「體驗模式」，
 // 不洩漏管理員取的渠道名）；demo 關 → 照舊 401。
 import { json } from "../../../lib/site.js";
-import { pgUser, chModels } from "../../../lib/playground.js";
+import { pgUser, chModels, dumbCfg } from "../../../lib/playground.js";
+import { isAdminUser } from "../../../lib/auth.js";
 import { demoCfg } from "../../../lib/demo.js";
 import type { ChannelRow, RouteCtx } from "../../../types.js";
 
@@ -33,6 +34,11 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
       }
     }
     return who.err;
+  }
+  // Dumb mode（v2.2）：非管理員一律拿不到模型清單 — 前端據 dumb:true 隱藏模型選單、
+  // 送聊天時不帶 channel/model（伺服器端在 chat.ts 蓋成指定值）。
+  if (!isAdminUser(who.user, env) && (await dumbCfg(env)).on) {
+    return json({ rows: [], dumb: true });
   }
   try {
     const res = await env.DB.prepare(

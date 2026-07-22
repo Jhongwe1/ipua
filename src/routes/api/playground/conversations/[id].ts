@@ -3,7 +3,8 @@
 //   PUT    { title } 改名
 //   DELETE 刪除對話（連同訊息，不可復原）
 import { json } from "../../../../lib/site.js";
-import { pgUser } from "../../../../lib/playground.js";
+import { pgUser, dumbCfg } from "../../../../lib/playground.js";
+import { isAdminUser } from "../../../../lib/auth.js";
 import type { Env, Row, RouteCtx, UserRow } from "../../../../types.js";
 
 async function ownConv(env: Env, user: UserRow, params: RouteCtx["params"]): Promise<Row | null> {
@@ -27,7 +28,14 @@ export async function onRequestGet({ request, env, params }: RouteCtx): Promise<
     )
       .bind(conv.id)
       .all();
-    return json({ conv: conv, messages: res.results || [] });
+    const messages = (res.results || []) as Row[];
+    // Dumb mode（v2.2）：會員從回讀也不能得知正在用的模型 — channel/model 一律遮空
+    if (!isAdminUser(who.user, env) && (await dumbCfg(env)).on) {
+      (conv as Row).channel = "";
+      (conv as Row).model = "";
+      for (const m of messages) m.model = "";
+    }
+    return json({ conv: conv, messages: messages });
   } catch (e: any) {
     return json({ error: "query-failed", detail: String((e && e.message) || e) }, 500);
   }
