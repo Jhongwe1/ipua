@@ -9,3 +9,4 @@ package-lock.json
 test-results
 playwright-report
 *.md
+v2.2_upgradeUI_image

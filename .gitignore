@@ -37,3 +37,6 @@ docs/DEFENSE.md
 
 # vitest JSON 報告（tools/check-docs.mjs 的輸入，每次 npm test 重生）
 .vitest-report.json
+
+# v2.2 UI 改版的參考截圖與 ChatGPT 頁面存檔（含個人帳號畫面，只留本機不上公開 repo）
+v2.2_upgradeUI_image/

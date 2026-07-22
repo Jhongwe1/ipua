@@ -1,49 +1,58 @@
 <!DOCTYPE html>
-<html lang="zh-Hant" data-theme="light">
+<html lang="zh-Hant" data-theme="dark" class="noanim">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <meta name="description" content="查詢 IP 位址與地理位置、User Agent、瀏覽器指紋 — IP address &amp; User Agent lookup.">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0b0b">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#212121">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%90%3C/text%3E%3C/svg%3E">
 <title>IP · UA 查詢</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* v2.2 ChatGPT 風格色票（與 SSR 外殼 lib/site.ts 同一套；預設深色） */
   :root{
-    --bg:#ffffff; --fg:#111111; --muted:#7a7a7a; --sub:#a0a0a0;
-    --line:#e6e6e6; --line2:#111111; --card:#ffffff;
-    --accent:#111111; --accent-fg:#ffffff; --field:#fafafa;
+    --bg:#ffffff; --fg:#0d0d0d; --muted:#5d5d5d; --sub:#8f8f8f;
+    --line:#e6e6e6; --line2:#0d0d0d; --card:#ffffff;
+    --accent:#0d0d0d; --accent-fg:#ffffff; --field:#f4f4f4;
+    --sb:#f9f9f9; --hov:rgba(0,0,0,.05); --hov2:rgba(0,0,0,.1);
     color-scheme:light;
   }
   [data-theme="dark"]{
-    --bg:#0b0b0b; --fg:#f4f4f4; --muted:#8f8f8f; --sub:#6b6b6b;
-    --line:#262626; --line2:#f4f4f4; --card:#131313;
-    --accent:#f4f4f4; --accent-fg:#0b0b0b; --field:#181818;
+    --bg:#212121; --fg:#ececec; --muted:#b4b4b4; --sub:#8f8f8f;
+    --line:#3a3a3a; --line2:#ececec; --card:#2f2f2f;
+    --accent:#ececec; --accent-fg:#0d0d0d; --field:#2f2f2f;
+    --sb:#171717; --hov:rgba(255,255,255,.06); --hov2:rgba(255,255,255,.12);
     color-scheme:dark;
   }
-  html,body{background:var(--bg);color:var(--fg);}
+  html,body{height:100%;background:var(--bg);color:var(--fg);}
   body{
     font-family:-apple-system,"Segoe UI","Microsoft JhengHei",system-ui,"PingFang TC",sans-serif;
     line-height:1.55;-webkit-font-smoothing:antialiased;
-    padding:26px 16px 56px;transition:background .25s,color .25s;
+    overflow:hidden;transition:background .25s,color .25s;
   }
+  .noanim *{transition:none!important;}
   .mono{font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Courier New",monospace;}
+  .app{display:flex;height:100vh;height:100dvh;}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);}
+  .content{flex:1;min-height:0;overflow-y:auto;padding:22px 16px 48px;}
+  .content::-webkit-scrollbar,.sb nav::-webkit-scrollbar{width:8px;}
+  .content::-webkit-scrollbar-track,.sb nav::-webkit-scrollbar-track{background:transparent;}
+  .content::-webkit-scrollbar-thumb,.sb nav::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;border:2px solid transparent;background-clip:content-box;}
   .wrap{max-width:720px;margin:0 auto;}
 
-  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;gap:10px;}
-  h1{font-size:20px;font-weight:700;letter-spacing:.03em;}
+  header{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:8px 14px;min-height:54px;}
+  h1{font-size:16px;font-weight:600;letter-spacing:0;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   h1 .dot{color:var(--muted);font-weight:400;margin:0 4px;}
-  .ctrls{display:flex;gap:8px;flex:0 0 auto;}
+  .ctrls{margin-left:auto;display:flex;gap:4px;flex:0 0 auto;align-items:center;}
   .ctrl{
-    height:38px;min-width:38px;padding:0 13px;border:1px solid var(--line);background:var(--card);
-    color:var(--fg);border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;line-height:1;
+    height:34px;min-width:34px;padding:0 11px;border:0;background:none;
+    color:var(--muted);border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;line-height:1;
     font-family:inherit;transition:.15s;
-    /* 與 lib/site.js 外殼的 .ctrl 對齊：登入是 <a>，要 flex 置中＋不要底線，否則文字偏上又拉長 */
     display:inline-flex;align-items:center;justify-content:center;text-decoration:none;
   }
-  .ctrl:hover{border-color:var(--line2);}
-  #themeToggle{width:38px;padding:0;font-size:15px;}
+  .ctrl:hover{background:var(--hov);color:var(--fg);}
+  #themeToggle{width:34px;padding:0;font-size:15px;}
 
   .tabs{display:flex;gap:8px;margin-bottom:20px;}
   .tab{
@@ -92,31 +101,61 @@
   .parse-out{margin-top:6px;}
   .hidden{display:none!important;}
 
-  /* ===== 側邊欄（☰ 固定在螢幕最左上角，捲動時也在；overlay 蓋在內容上，z-index 高於右下角廣告的 5） ===== */
-  #menuBtn{position:fixed;top:14px;left:14px;z-index:50;width:38px;padding:0;display:inline-flex;align-items:center;justify-content:center;}
-  #menuBtn svg{display:block;}
-  /* 窄螢幕時內容貼近左緣，標題往右讓位給角落的 ☰（52px＝按鈕右緣再留 16px 呼吸空間），
-     且 ☰ 下移到與標題列（右側圓鈕）同一水平線；寬螢幕內容置中，維持釘在角落 */
-  @media(max-width:839.98px){ header{padding-left:52px;} #menuBtn{top:26px;} }
-  .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s;z-index:60;}
-  .sb-overlay.show{opacity:1;visibility:visible;}
-  .sb{
-    position:fixed;top:0;left:0;bottom:0;width:264px;max-width:82vw;background:var(--card);
-    border-right:1px solid var(--line);z-index:61;transform:translateX(-103%);
-    transition:transform .22s ease;display:flex;flex-direction:column;
+  /* ===== 側邊欄（v2.2：桌機常駐可收合、手機抽屜；與 SSR 外殼同結構同樣式） ===== */
+  .sb{width:260px;flex:0 0 260px;background:var(--sb);display:flex;flex-direction:column;min-width:0;transition:margin-left .22s ease;}
+  .app.nosb .sb{margin-left:-260px;}
+  .sb-top{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 10px 2px;}
+  .sb-icon{width:36px;height:36px;flex:0 0 auto;border:0;background:none;color:var(--muted);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-family:inherit;font-size:14px;transition:.15s;}
+  .sb-icon:hover{background:var(--hov);color:var(--fg);}
+  .sb-icon svg{display:block;}
+  .ic-m{display:none;}
+  .sb nav{flex:1;overflow-y:auto;padding:4px 10px 12px;min-height:0;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;color:var(--fg);text-decoration:none;font-size:13.5px;font-weight:500;transition:background .12s;min-width:0;cursor:pointer;}
+  .sb-link:hover{background:var(--hov);}
+  .sb-link.active{background:var(--hov2);}
+  .sb-new{font-weight:600;margin-bottom:2px;}
+  .sb-new svg{flex:0 0 auto;}
+  .sb-sec{font-size:11.5px;font-weight:600;color:var(--sub);padding:12px 10px 5px;}
+  .sb-div{border-top:1px solid var(--line);margin:10px 4px 2px;}
+  .sb-grp>summary{list-style:none;}
+  .sb-grp>summary::-webkit-details-marker{display:none;}
+  .sb-grp>summary .lb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sb-grp>summary .chev{flex:0 0 auto;color:var(--sub);font-size:14px;line-height:1;transition:transform .15s;}
+  .sb-grp[open]>summary .chev{transform:rotate(90deg);}
+  .grp-body .sb-link{padding-left:26px;}
+  .sb-conv{display:flex;align-items:center;gap:2px;padding:7px 4px 7px 10px;border-radius:9px;cursor:pointer;color:var(--fg);min-width:0;}
+  .sb-conv:hover{background:var(--hov);}
+  .sb-conv .tt{flex:1;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sb-conv .dots{flex:0 0 auto;border:0;background:none;color:var(--muted);border-radius:6px;padding:3px 7px;cursor:pointer;font-size:14px;line-height:1;font-family:inherit;opacity:0;transition:.12s;}
+  .sb-conv:hover .dots{opacity:.85;}
+  .sb-conv .dots:hover{background:var(--hov2);color:var(--fg);}
+  @media(hover:none){.sb-conv .dots{opacity:.6;}}
+  .sb-empty{padding:8px 10px;font-size:12.5px;color:var(--sub);}
+  .sb-acct{flex:0 0 auto;border-top:1px solid var(--line);padding:8px;}
+  /* 共用彈出選單（頭像／History「…」） */
+  .pop{position:fixed;z-index:130;min-width:200px;max-width:300px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);padding:6px;display:none;}
+  .pop.open{display:block;}
+  .pop .phead{padding:9px 12px 7px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pop .phr{border-top:1px solid var(--line);margin:5px 4px;}
+  .pop .pi{display:flex;width:100%;align-items:center;gap:9px;text-align:left;padding:9px 12px;border:0;background:none;color:var(--fg);font-family:inherit;font-size:13.5px;font-weight:500;line-height:1.45;border-radius:9px;cursor:pointer;text-decoration:none;box-sizing:border-box;}
+  .pop .pi:hover{background:var(--hov);}
+  .pop .pi.danger{color:#e02e2a;}
+  .pop .pi.danger:hover{background:rgba(224,46,42,.12);}
+  .pop .pi .pk{margin-left:auto;color:var(--muted);font-size:12px;}
+  .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s;z-index:60;}
+  @media(max-width:839.98px){
+    .sb{position:fixed;top:0;left:0;bottom:0;z-index:61;max-width:84vw;margin:0!important;transform:translateX(-105%);transition:transform .22s ease;}
+    .app.sbopen .sb{transform:none;box-shadow:0 0 42px rgba(0,0,0,.35);}
+    .app.sbopen .sb-overlay{opacity:1;visibility:visible;}
+    .ic-d{display:none;}
+    .ic-m{display:inline;}
+    .content{padding:18px 13px 44px;}
   }
-  .sb.open{transform:none;box-shadow:0 0 42px rgba(0,0,0,.25);}
-  .sb-head{display:flex;align-items:center;justify-content:space-between;padding:13px 13px 11px 20px;font-size:15px;font-weight:700;border-bottom:1px solid var(--line);}
-  #sbClose{width:34px;height:34px;min-width:34px;padding:0;font-size:13px;border-radius:17px;}
-  .sb nav{padding:6px 10px 22px;overflow-y:auto;flex:1;}
-  .sb-sec{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:16px 10px 7px;}
-  .sb-link{display:block;padding:10px;border-radius:8px;color:var(--fg);text-decoration:none;font-size:14px;font-weight:600;transition:.15s;}
-  .sb-link:hover{background:var(--field);}
-  .sb-link.active{background:var(--accent);color:var(--accent-fg);}
+  @media(min-width:840px){.app:not(.nosb) #sbToggle{display:none;}}
 
   footer{margin-top:28px;text-align:center;color:var(--sub);font-size:11px;line-height:1.8;}
   footer a{color:var(--muted);}
-  @media(max-width:480px){.k{flex-basis:80px;}h1{font-size:17px;}body{padding:20px 13px 48px;}#menuBtn{top:20px;}}
+  @media(max-width:480px){.k{flex-basis:80px;}h1{font-size:15px;}}
 
   /* 觸控裝置：表單控制項字級 ≥16px — iOS 在 <16px 的欄位聚焦（鍵盤彈出）會自動放大整頁（與 SSR 外殼同處方） */
   @media(hover:none){
@@ -140,45 +179,51 @@
 </head>
 <body>
 
-<!-- 側邊欄：最左上角 ☰ 開啟。#sbMenu 裡是選單本體 — 頁面先內建預設（SEO/斷網 fallback），
+<!-- v2.2 外殼（與 SSR 外殼 lib/site.ts 同結構）：左側常駐可收合側邊欄＋右側主區。
+     #sbMenu 裡是選單本體 — 頁面先內建預設（SEO/斷網 fallback），
      載入後由 loadMenu() 從 /api/menu 取得管理員自訂選單覆蓋（管理員可在 ✎ 編輯模式改選單）。
-     /ip、/ua 是本頁分頁：renderMenu 會補 data-nav，點了走前端 showTab 切換（不重新載入）。
-     #sbAdmin 是管理員區容器 — 一般訪客永遠是空的；登入過後台的裝置由 adminbar.js 動態長出
-     「管理員設定 / 訪客紀錄 / API 文件」，選單重繪（只動 #sbMenu）不會把它洗掉。 -->
-<button id="menuBtn" class="ctrl" aria-label="選單 / Menu" aria-expanded="false" aria-controls="sidebar">
-  <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M1 1h14M1 7h14M1 13h14"/></svg>
-</button>
+     渲染規則：第一個 section 平鋪（/playground 由 New chat 取代）、其後 section 變可展開群組。
+     /ip、/ua 是本頁分頁：data-nav 連結點了走前端 showTab 切換（不重新載入）。
+     #sbAdmin 是選單編輯器的容器；#sbHist 是 playground 歷史對話（登入且有服務才顯示）；
+     #sbAcct 由 account.js 畫（登入鈕或頭像＋聯絡我）。 -->
+<div id="app" class="app">
 <div id="sbOverlay" class="sb-overlay"></div>
-<aside id="sidebar" class="sb" aria-hidden="true" inert>
-  <div class="sb-head">
-    <span data-i18n="sb.title">選單</span>
-    <button id="sbClose" class="ctrl" aria-label="關閉 / Close">✕</button>
+<aside id="sidebar" class="sb" aria-label="Sidebar">
+  <div class="sb-top">
+    <button id="sbCollapse" class="sb-icon" aria-label="收合側邊欄 / Close sidebar"><span class="ic-d"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/></svg></span><span class="ic-m" aria-hidden="true">✕</span></button>
   </div>
   <nav>
+    <a id="sbNewChat" class="sb-link sb-new" href="/playground"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8 8 16l1.2-4z"/></svg><span data-i18n="sb.newchat">新交談</span></a>
     <div id="sbMenu">
-      <div class="sb-sec" data-i18n="sb.services">服務</div>
-      <a class="sb-link" href="/playground">LLM playground</a>
       <a class="sb-link" href="/relay" data-i18n="sb.relay">API 中轉站</a>
       <a class="sb-link" href="/vpn" data-i18n="sb.vpn">VPN</a>
-      <div class="sb-sec" data-i18n="sb.tools">工具</div>
-      <a class="sb-link" href="/ip" data-nav="ip" data-i18n="tab.ip">IP 查詢</a>
-      <a class="sb-link" href="/ua" data-nav="ua" data-i18n="tab.ua">UA 查詢</a>
-      <div class="sb-sec" data-i18n="sb.content">內容</div>
-      <a class="sb-link" href="/news" data-i18n="sb.news">新聞</a>
-      <a class="sb-link" href="/articles" data-i18n="sb.posts">文章</a>
+      <details class="sb-grp" data-grp="工具"><summary class="sb-link"><span class="lb" data-i18n="sb.tools">工具</span><span class="chev" aria-hidden="true">›</span></summary><div class="grp-body">
+        <a class="sb-link" href="/ip" data-nav="ip" data-i18n="tab.ip">IP 查詢</a>
+        <a class="sb-link" href="/ua" data-nav="ua" data-i18n="tab.ua">UA 查詢</a>
+      </div></details>
+      <details class="sb-grp" data-grp="內容"><summary class="sb-link"><span class="lb" data-i18n="sb.content">內容</span><span class="chev" aria-hidden="true">›</span></summary><div class="grp-body">
+        <a class="sb-link" href="/news" data-i18n="sb.news">新聞</a>
+        <a class="sb-link" href="/articles" data-i18n="sb.posts">文章</a>
+      </div></details>
     </div>
     <div id="sbAdmin"></div>
+    <div id="sbHist" class="hidden"><div class="sb-div"></div><div class="sb-sec" data-i18n="sb.history">對話紀錄</div><div id="sbHistList"></div></div>
   </nav>
+  <div id="sbAcct" class="sb-acct"></div>
 </aside>
 
-<div class="wrap">
+<div class="main">
   <header>
+    <button id="sbToggle" class="sb-icon" aria-label="開啟側邊欄 / Open sidebar"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9.5 4v16"/></svg></button>
     <h1>IP<span class="dot">·</span>UA <span data-i18n="brand.suffix">查詢</span></h1>
     <div class="ctrls">
       <button id="langToggle" class="ctrl" title="Language / 語言">EN</button>
       <button id="themeToggle" class="ctrl" title="Day / Night">☾</button>
     </div>
   </header>
+
+  <div class="content">
+  <div class="wrap">
 
   <nav class="tabs">
     <button class="tab active" data-mode="ip" data-i18n="tab.ip">IP 查詢</button>
@@ -295,7 +340,10 @@
     <a href="https://www.openstreetmap.org" target="_blank" rel="noopener">OpenStreetMap</a><br>
     <span data-i18n="foot.fp">指紋僅供辨識能力展示，非加密雜湊。</span>
   </footer>
-</div>
+  </div><!-- /.wrap -->
+  </div><!-- /.content -->
+</div><!-- /.main -->
+</div><!-- /.app -->
 
 <!-- 廣告版位（寬螢幕右下角）：廣告 iframe 由 initAds() 依螢幕寬度掛入 -->
 <div id="ad-side" class="ad-slot" data-size="300×250"></div>
@@ -329,6 +377,9 @@
       "sb.title":"選單","sb.content":"內容","sb.news":"新聞","sb.posts":"文章","sb.tools":"工具",
       "sb.services":"服務","sb.relay":"API 中轉站","sb.vpn":"VPN",
       "sb.admin":"管理員","sb.manage":"文章管理","sb.logs":"訪客紀錄",
+      "sb.newchat":"新交談","sb.history":"對話紀錄",
+      "hist.rename":"改名","hist.delete":"刪除","hist.untitled":"（未命名）","hist.empty":"還沒有對話",
+      "hist.confirm":"刪除這則對話？此動作無法復原。","hist.title":"對話名稱",
       "theme.day":"白天模式（點擊切換）","theme.night":"夜間模式（點擊切換）","theme.auto":"自動日夜（點擊切換）"
     },
     en: {
@@ -354,19 +405,18 @@
       "sb.title":"Menu","sb.content":"Content","sb.news":"News","sb.posts":"Articles","sb.tools":"Tools",
       "sb.services":"Services","sb.relay":"API relay","sb.vpn":"VPN",
       "sb.admin":"Admin","sb.manage":"Manage posts","sb.logs":"Visitor logs",
+      "sb.newchat":"New chat","sb.history":"History",
+      "hist.rename":"Rename","hist.delete":"Delete","hist.untitled":"(untitled)","hist.empty":"No conversations yet",
+      "hist.confirm":"Delete this conversation? This cannot be undone.","hist.title":"Conversation title",
       "theme.day":"Day mode (tap to switch)","theme.night":"Night mode (tap to switch)","theme.auto":"Auto day/night (tap to switch)"
     }
   };
 
-  var lang = "zh";
+  var lang = "en";   // v2.2 起預設英文（存過偏好者除外）
   function t(key, vars){
     var s = (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
     if(vars) for(var k in vars) s = s.split("{"+k+"}").join(vars[k]);
     return s;
-  }
-  function detectLang(){
-    var l = (navigator.language || (navigator.languages && navigator.languages[0]) || "en").toLowerCase();
-    return l.indexOf("zh") === 0 ? "zh" : "en";
   }
 
   /* ================= 小工具 ================= */
@@ -824,11 +874,11 @@
   }
 
   /* ================= 主題（三段式：day 白底 / night 黑底 / auto 依當地日夜） =================
-     預設 day（白底），選擇存 localStorage `ipua-theme-mode`（跨頁面、跨次瀏覽都記住）。
+     v2.2 起預設 night（深色），選擇存 localStorage `ipua-theme-mode`（跨頁面、跨次瀏覽都記住）。
      auto 模式：先用「上次日夜結果」快取（ipua-auto）避免閃爍，沒快取用裝置時鐘 6–18 點當白天，
      IP 查詢回來後再用太陽高度角精準校正。day/night 模式也持續更新快取，供 auto 與其他頁面用。 */
   var THEME_MODES = ["day", "night", "auto"];
-  var themeMode = "day", autoCache = null;
+  var themeMode = "night", autoCache = null;   // v2.2 起預設深色
   try{ var m0 = localStorage.getItem("ipua-theme-mode"); if(THEME_MODES.indexOf(m0) >= 0) themeMode = m0; }catch(e){}
   try{ autoCache = localStorage.getItem("ipua-auto"); }catch(e){}
   function autoThemeGuess(){
@@ -900,59 +950,205 @@
     }
   }
 
-  /* ================= 側邊欄 ================= */
+  /* ================= 側邊欄（v2.2：桌機常駐可收合、手機抽屜；與 SSR 外殼同邏輯） ================= */
+  var mqDesk = matchMedia("(min-width:840px)");
+  function isDesk(){ return mqDesk.matches; }
+  function drawerOpen(open){
+    var app = document.getElementById("app"), sb = document.getElementById("sidebar");
+    app.classList.toggle("sbopen", !!open);
+    if(open) sb.removeAttribute("inert"); else sb.setAttribute("inert","");
+  }
   function initSidebar(){
-    var sb = document.getElementById("sidebar"), ov = document.getElementById("sbOverlay"),
-        btn = document.getElementById("menuBtn"), cls = document.getElementById("sbClose");
-    function setOpen(open){
-      sb.classList.toggle("open", open);
-      ov.classList.toggle("show", open);
-      sb.setAttribute("aria-hidden", open ? "false" : "true");
-      btn.setAttribute("aria-expanded", open ? "true" : "false");
-      if(open) sb.removeAttribute("inert"); else sb.setAttribute("inert","");
-      document.body.style.overflow = open ? "hidden" : "";   // 開著時鎖住底下頁面捲動
-      if(open){ var f = sb.querySelector(".sb-link"); if(f) f.focus(); }
-      else btn.focus();
+    var app = document.getElementById("app"), sb = document.getElementById("sidebar"),
+        ov = document.getElementById("sbOverlay"),
+        tgl = document.getElementById("sbToggle"), clp = document.getElementById("sbCollapse");
+    var collapsed = false;
+    try{ collapsed = localStorage.getItem("ipua-sbc") === "1"; }catch(e){}
+    function applySb(){
+      if(isDesk()){
+        app.classList.remove("sbopen");
+        app.classList.toggle("nosb", collapsed);
+        if(collapsed) sb.setAttribute("inert",""); else sb.removeAttribute("inert");
+      }else{
+        app.classList.remove("nosb");
+        if(app.classList.contains("sbopen")) sb.removeAttribute("inert"); else sb.setAttribute("inert","");
+      }
     }
-    btn.addEventListener("click", function(){ setOpen(!sb.classList.contains("open")); });
-    cls.addEventListener("click", function(){ setOpen(false); });
-    ov.addEventListener("click", function(){ setOpen(false); });
-    document.addEventListener("keydown", function(e){ if(e.key === "Escape" && sb.classList.contains("open")) setOpen(false); });
+    tgl.addEventListener("click", function(){
+      if(isDesk()){ collapsed = false; try{ localStorage.setItem("ipua-sbc","0"); }catch(e){} applySb(); }
+      else drawerOpen(true);
+    });
+    clp.addEventListener("click", function(){
+      if(isDesk()){ collapsed = true; try{ localStorage.setItem("ipua-sbc","1"); }catch(e){} applySb(); }
+      else drawerOpen(false);
+    });
+    ov.addEventListener("click", function(){ drawerOpen(false); });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape" && !isDesk() && app.classList.contains("sbopen")) drawerOpen(false);
+    });
+    if(mqDesk.addEventListener) mqDesk.addEventListener("change", applySb);
+    else if(mqDesk.addListener) mqDesk.addListener(applySb);
     // IP / UA 是同一頁的分頁：攔下連結改用 showTab 切換，不重新載入。
     // 用事件委派 — 選單由 renderMenu() 重繪後不必重綁。
     sb.addEventListener("click", function(e){
       var a = e.target && e.target.closest ? e.target.closest(".sb-link[data-nav]") : null;
-      if(!a || !sb.contains(a)) return;
-      e.preventDefault();
-      showTab(a.getAttribute("data-nav"), true);
-      setOpen(false);
+      if(a && sb.contains(a)){
+        e.preventDefault();
+        showTab(a.getAttribute("data-nav"), true);
+      }
+      var any = e.target && e.target.closest ? e.target.closest("a.sb-link,.sb-conv") : null;
+      if(any && !isDesk()) drawerOpen(false);
     });
-    // 管理員區（管理員設定/訪客紀錄/API 文件）不在這裡 — 由 adminbar.js 注入 #sbAdmin，
-    // 一般訪客（localStorage 沒金鑰）根本不會載入那支程式。
+    // 群組（工具/內容…）展開狀態記憶：靜態內建的兩組先綁
+    $$(".sb-grp").forEach(restoreGrp);
+    applySb();
   }
+  function restoreGrp(g){
+    if(g.getAttribute("data-grp-bound")) return;
+    g.setAttribute("data-grp-bound","1");
+    var key = "ipua-grp:" + (g.getAttribute("data-grp") || "");
+    try{ if(localStorage.getItem(key) === "1") g.open = true; }catch(e){}
+    g.addEventListener("toggle", function(){
+      try{ localStorage.setItem(key, g.open ? "1" : "0"); }catch(e){}
+    });
+  }
+
+  /* ================= 共用彈出選單（頭像／History「…」；account.js 靠 window.SBPOP 用） ================= */
+  var curPop = null;
+  function closePop(){ if(curPop){ curPop.remove(); curPop = null; } }
+  function openPop(anchor, build, alignUp){
+    closePop();
+    var p = document.createElement("div"); p.className = "pop";
+    build(p);
+    document.body.appendChild(p);
+    p.classList.add("open");
+    var r = anchor.getBoundingClientRect();
+    var pw = p.offsetWidth, ph = p.offsetHeight;
+    var x = alignUp ? r.left : Math.min(r.left, window.innerWidth - pw - 8);
+    if(x + pw > window.innerWidth - 8) x = window.innerWidth - pw - 8;
+    if(x < 8) x = 8;
+    var y = alignUp ? (r.top - ph - 8) : (r.bottom + 6);
+    if(!alignUp && y + ph > window.innerHeight - 8) y = r.top - ph - 6;
+    if(y < 8) y = 8;
+    p.style.left = x + "px"; p.style.top = y + "px";
+    curPop = p;
+    return p;
+  }
+  document.addEventListener("click", function(e){ if(curPop && !curPop.contains(e.target)) closePop(); }, true);
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape") closePop(); });
+  window.addEventListener("resize", closePop);
+  function popItem(p, text, fn, danger){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "pi" + (danger ? " danger" : ""); b.textContent = text;
+    b.addEventListener("click", function(ev){ ev.stopPropagation(); closePop(); fn(); });
+    p.appendChild(b);
+    return b;
+  }
+  window.SBPOP = { open: openPop, close: closePop, item: popItem, t: t };
+
+  /* ================= History（playground 歷史對話；登入＋有 playground 服務才顯示） ================= */
+  var convs = [], histOn = false;
+  function canHist(u){ return !!(u && (u.is_admin || (u.services || []).indexOf("playground") >= 0)); }
+  function histApi(path, opts){
+    opts = opts || {}; opts.headers = opts.headers || {}; opts.cache = "no-store";
+    if(opts.json !== undefined){ opts.method = opts.method || "POST"; opts.headers["content-type"] = "application/json"; opts.body = JSON.stringify(opts.json); delete opts.json; }
+    return fetch(path, opts).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if(!r.ok) throw new Error(d.hint || d.error || ("HTTP " + r.status));
+        return d;
+      });
+    });
+  }
+  function loadHist(){
+    histApi("/api/playground/conversations").then(function(d){
+      convs = d.rows || []; histOn = true;
+      document.getElementById("sbHist").classList.remove("hidden");
+      renderHist();
+    }).catch(function(){ /* 讀不到就整區不顯示 */ });
+  }
+  function renderHist(){
+    if(!histOn) return;
+    var list = document.getElementById("sbHistList");
+    list.innerHTML = "";
+    if(!convs.length){
+      var em = document.createElement("div"); em.className = "sb-empty"; em.textContent = t("hist.empty");
+      list.appendChild(em); return;
+    }
+    convs.forEach(function(c){
+      var row = document.createElement("div"); row.className = "sb-conv";
+      var tt = document.createElement("span"); tt.className = "tt";
+      tt.textContent = c.title || t("hist.untitled"); tt.title = c.title || "";
+      row.appendChild(tt);
+      var d = document.createElement("button"); d.type = "button"; d.className = "dots";
+      d.textContent = "⋯"; d.setAttribute("aria-label", "⋯");
+      d.addEventListener("click", function(e){
+        e.stopPropagation();
+        openPop(d, function(p){
+          popItem(p, t("hist.rename"), function(){
+            var v = prompt(t("hist.title"), c.title || "");
+            if(v == null) return;
+            v = v.replace(/\s+/g, " ").trim();
+            if(!v) return;
+            histApi("/api/playground/conversations/" + c.id, { method: "PUT", json: { title: v } })
+              .then(function(x){ c.title = x.title || v; renderHist(); })
+              .catch(function(err){ alert(String(err && err.message || err)); });
+          });
+          popItem(p, t("hist.delete"), function(){
+            if(!confirm(t("hist.confirm"))) return;
+            histApi("/api/playground/conversations/" + c.id, { method: "DELETE" }).then(function(){
+              convs = convs.filter(function(x){ return x.id !== c.id; });
+              renderHist();
+            }).catch(function(err){ alert(String(err && err.message || err)); });
+          }, true);
+        });
+      });
+      row.appendChild(d);
+      row.addEventListener("click", function(){ location.href = "/playground#c=" + encodeURIComponent(c.id); });
+      list.appendChild(row);
+    });
+  }
+  window.addEventListener("ipua:me", function(e){
+    var u = e && e.detail && e.detail.user;
+    if(canHist(u)) loadHist();
+  });
 
   /* ================= 側邊欄選單（管理員可在 ✎ 編輯模式自訂，存 D1） ================= */
   // 頁面 HTML 內建預設選單當底；載入後從 /api/menu 拿最新（有快取先畫快取，網路回來再更新）。
+  // v2.2 渲染規則（與 SSR 外殼 menuHtml 相同）：第一個 section 平鋪（標題不顯示、
+  // /playground 連結跳過 — New chat 就是它）；第二個以後的 section 變可展開群組（預設收合）。
   function renderMenu(items){
     if(document.querySelector(".ab-ed")) return;   // 選單編輯器開著 → 別把編輯畫面蓋掉
     var host = document.getElementById("sbMenu");
     if(!host || !items || !items.length) return;
     host.innerHTML = "";
+    var secN = 0, grpBody = null;
     items.forEach(function(it){
-      var n;
       if(it.kind === "section"){
-        n = document.createElement("div"); n.className = "sb-sec";
-      }else{
-        n = document.createElement("a"); n.className = "sb-link"; n.href = it.url || "/";
-        var nav = it.url === "/ip" ? "ip" : (it.url === "/ua" ? "ua" : "");
-        if(nav){
-          n.setAttribute("data-nav", nav);
-          if(nav === curMode) n.className += " active";
-        }
+        secN++;
+        if(secN >= 2){
+          var dt = document.createElement("details"); dt.className = "sb-grp";
+          dt.setAttribute("data-grp", it.label || "");
+          var sm = document.createElement("summary"); sm.className = "sb-link";
+          var lb = document.createElement("span"); lb.className = "lb"; lb.textContent = it.label || "";
+          if(it.label_en) lb.setAttribute("data-en", it.label_en);
+          var ch = document.createElement("span"); ch.className = "chev"; ch.textContent = "›"; ch.setAttribute("aria-hidden","true");
+          sm.appendChild(lb); sm.appendChild(ch); dt.appendChild(sm);
+          grpBody = document.createElement("div"); grpBody.className = "grp-body"; dt.appendChild(grpBody);
+          host.appendChild(dt);
+          restoreGrp(dt);
+        }else grpBody = null;
+        return;
+      }
+      if(secN <= 1 && it.url === "/playground") return;   // New chat 已經是它
+      var n = document.createElement("a"); n.className = "sb-link"; n.href = it.url || "/";
+      var nav = it.url === "/ip" ? "ip" : (it.url === "/ua" ? "ua" : "");
+      if(nav){
+        n.setAttribute("data-nav", nav);
+        if(nav === curMode) n.className += " active";
       }
       n.textContent = it.label || "";
       if(it.label_en) n.setAttribute("data-en", it.label_en);
-      host.appendChild(n);
+      (grpBody || host).appendChild(n);
     });
     applyI18n();   // 套用目前語言（data-en）
   }
@@ -988,13 +1184,13 @@
 
   /* ================= 綁定與啟動 ================= */
   function start(){
-    // 語言：手動優先，否則依裝置語言
+    // 語言：手動優先，否則英文（v2.2 預設）
     var manualLang = null; try{ manualLang = localStorage.getItem("ipua-lang"); }catch(e){}
-    lang = manualLang || detectLang();
+    if(manualLang === "zh" || manualLang === "en") lang = manualLang;
 
     applyI18n();
 
-    // 主題初值：依儲存的模式（預設 day 白底；auto 模式等 IP 回來會再校正）
+    // 主題初值：依儲存的模式（v2.2 預設 night 深色；auto 模式等 IP 回來會再校正）
     applyTheme();
 
     // 本機測試時顯示廣告版位的虛線預覽框（正式網域不套用）
@@ -1011,8 +1207,8 @@
     document.getElementById("langToggle").addEventListener("click", function(){
       lang = (lang === "zh") ? "en" : "zh";
       try{ localStorage.setItem("ipua-lang", lang); }catch(e){}
-      applyI18n(); applyTheme(); renderUA(); renderIP(); renderParse();
-      // 廣播給 account.js 的帳號鈕跟著切語言
+      applyI18n(); applyTheme(); renderUA(); renderIP(); renderParse(); renderHist();
+      // 廣播給 account.js 的帳號區跟著切語言
       try{ window.dispatchEvent(new CustomEvent("ipua:lang", { detail:{ lang: lang } })); }catch(e){}
     });
 
@@ -1048,16 +1244,21 @@
     try{
       if(localStorage.getItem("ipua-logs-token") || /^(localhost|127\.)/.test(location.hostname)){
         var abs = document.createElement("script");
-        abs.src = "/assets/adminbar.js?v=20260717b";
+        abs.src = "/assets/adminbar.js?v=20260722b";
         document.head.appendChild(abs);
       }
     }catch(e){}
+
+    // 首幀後才允許過場動畫（不然側欄會在載入瞬間滑一下）
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+      document.documentElement.classList.remove("noanim");
+    }); });
   }
 
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
 })();
 </script>
-<script src="/assets/account.js?v=20260717b"></script>
+<script src="/assets/account.js?v=20260722b"></script>
 </body>
 </html>

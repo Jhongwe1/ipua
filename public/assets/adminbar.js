@@ -1,13 +1,13 @@
-/* adminbar.js — 管理員編輯工具（2026-07-17 UI 改版：管理員區統整）。
+/* adminbar.js — 管理員編輯工具（v2.2 ChatGPT 風格外殼版）。
    載入時機：登入過後台的裝置（localStorage 有金鑰）、Google 管理員（account.js 偵測到 is_admin 後載入）、
    或本機開發。一般訪客不會下載這支；真正的權限仍在伺服器端每支 /api/admin/* 驗證。
 
-   2026-07-17 起的配置（管理員要求）：
-     - 側邊欄「選單」標題右邊一顆小 ✎ ＝ 進入選單編輯模式（以前是列表裡的「編輯選單」項）
-     - 「管理員」區收斂成四頁：管理員設定（/settings）、成員管理（/members）、
-       訪客紀錄（/logs）、API 文件（/api-docs）；文章頁另有情境式「編輯這篇文章」
-     - /news、/articles 列表頁的頁首多一顆「＋」＝新增文章（以前是列表裡的「新增文章」項）
-     - 網站名稱改到 /settings 頁；window.__ipuaMenuEdit 供 /settings 的「✎ 編輯選單」鈕呼叫
+   v2.2（2026-07-22）配置：
+     - 管理員頁面入口（管理員設定/成員管理/訪客紀錄/API 文件/文章管理）搬到左下角頭像選單
+       （account.js 負責）— 側邊欄不再長「管理員」區
+     - 側欄頂列（.sb-top）一顆小 ✎ ＝ 進入選單編輯模式
+     - 文章內頁的頁首多一顆 ✎ ＝ 編輯這篇文章；/news /articles 列表頁首的「＋」＝新增文章
+     - window.__ipuaMenuEdit 供 /settings 的「✎ 編輯選單」鈕呼叫
    編輯選單＝把側邊欄變成編輯器（↑↓ 排序、改名、刪除、＋連結/分類、還原預設），即時自動儲存。 */
 (function () {
   "use strict";
@@ -17,8 +17,9 @@
   var token = "";
   try { token = localStorage.getItem("ipua-logs-token") || ""; } catch (e) {}
 
-  var lang = "zh";
-  try { if (localStorage.getItem("ipua-lang") === "en") lang = "en"; } catch (e) {}
+  // v2.2 起預設英文（存過偏好者除外）
+  var lang = "en";
+  try { if (localStorage.getItem("ipua-lang") === "zh") lang = "zh"; } catch (e) {}
   function tx(zh, en) { return lang === "en" ? en : zh; }
 
   /* ===== 小工具 ===== */
@@ -55,12 +56,12 @@
   var css =
     "button.sb-link{width:100%;text-align:left;border:0;background:none;font-family:inherit;cursor:pointer}" +
     ".sb-action{font-size:13.5px}" +
-    /* 「選單」標題右邊的小 ✎（管理員才看得到）：✕ 靠 margin-left:auto 推回最右 */
-    "#sbClose{margin-left:auto}" +
-    "#sbMenuEdit{width:26px;height:26px;min-width:26px;margin-left:8px;padding:0;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:13px;font-size:12px;line-height:1;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;transition:.15s}" +
-    "#sbMenuEdit:hover{border-color:var(--line2);color:var(--fg)}" +
-    /* 列表頁頁首的「＋ 新增文章」（管理員才看得到）：樣式同 .ctrl 圓鈕 */
-    "#abNewPost{width:38px;padding:0;font-size:19px;font-weight:400;text-decoration:none}" +
+    /* 側欄頂列的小 ✎（管理員才看得到）：與 .sb-icon 同款 */
+    "#sbMenuEdit{width:36px;height:36px;min-width:36px;padding:0;border:0;background:none;color:var(--muted);border-radius:8px;font-size:14px;line-height:1;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;transition:.15s}" +
+    "#sbMenuEdit:hover{background:var(--hov);color:var(--fg)}" +
+    /* 頁首情境鈕（管理員才看得到）：＋＝新增文章、✎＝編輯這篇 */
+    "#abNewPost{width:34px;padding:0;font-size:19px;font-weight:400;text-decoration:none}" +
+    "#abEditPost{width:34px;padding:0;font-size:14px;text-decoration:none}" +
     /* 彈窗：overlay 可捲動＋margin:auto ＝ 內容矮時置中、高時（手機鍵盤彈出）可捲，不會卡在鍵盤後面 */
     ".ab-ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;overscroll-behavior:contain}" +
     ".ab-dlg{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:18px;width:100%;max-width:360px;margin:auto;box-shadow:0 12px 44px rgba(0,0,0,.3)}" +
@@ -94,65 +95,39 @@
   var artM = location.pathname.match(/^\/(news|articles)\/(\d+)$/);   // 文章頁 → 可「編輯這篇」
   var newCat = /^\/articles/.test(location.pathname) ? "article" : "news";
 
-  /* ===== 側邊欄「管理員」區（純文字，不加前綴小圖示 — 管理員 2026-07-14 要求） ===== */
-  function itemLink(zh, en, href) {
-    var a = el("a", "sb-link sb-action", tx(zh, en));
-    a.href = href;
-    a.setAttribute("data-en", en); a.setAttribute("data-zh", zh);
-    if (location.pathname === href) a.className += " active";
-    return a;
-  }
-  function itemBtn(zh, en, fn) {
-    var b = el("button", "sb-link sb-action", tx(zh, en));
-    b.type = "button";
-    b.setAttribute("data-en", en); b.setAttribute("data-zh", zh);
-    b.addEventListener("click", fn);
-    return b;
-  }
-  function adminNav() {
-    var host = document.getElementById("sbAdmin") ||
-      (document.getElementById("sidebar") && document.getElementById("sidebar").querySelector("nav"));
-    if (!host || host.getAttribute("data-ab")) return;
-    host.setAttribute("data-ab", "1");
-
-    var sec = el("div", "sb-sec", tx("管理員", "Admin"));
-    sec.setAttribute("data-en", "Admin"); sec.setAttribute("data-zh", "管理員");
-    host.appendChild(sec);
-
-    // 2026-07-17 統整（稍晚管理員要求把成員管理加回來）：固定四頁
-    //（其餘入口在 /settings 的「其他管理頁」與頭像選單）
-    if (artM) host.appendChild(itemLink("編輯這篇文章", "Edit this post", "/admin?edit=" + artM[2]));
-    host.appendChild(itemLink("管理員設定", "Admin settings", "/settings"));
-    host.appendChild(itemLink("成員管理", "Members", "/members"));
-    host.appendChild(itemLink("訪客紀錄", "Visitor logs", "/logs"));
-    host.appendChild(itemLink("API 文件", "API docs", "/api-docs"));
-  }
-
-  /* ===== 「選單」標題右邊的小 ✎（進入選單編輯模式） ===== */
+  /* ===== 側欄頂列的小 ✎（進入選單編輯模式）=====
+     v2.2：管理員頁面入口都在頭像選單（account.js），側欄只剩這顆編輯鈕。 */
   function mountMenuEditBtn() {
-    var head = document.querySelector("#sidebar .sb-head");
-    if (!head || document.getElementById("sbMenuEdit")) return;
+    var top = document.querySelector("#sidebar .sb-top");
+    if (!top || document.getElementById("sbMenuEdit")) return;
     var b = el("button", null, "✎");    // ✎
     b.id = "sbMenuEdit"; b.type = "button";
     b.title = tx("編輯選單", "Edit menu");
     b.setAttribute("aria-label", tx("編輯選單", "Edit menu"));
     b.addEventListener("click", startMenuEdit);
-    var title = head.querySelector("span");
-    if (title && title.nextSibling) head.insertBefore(b, title.nextSibling);
-    else head.appendChild(b);
+    top.insertBefore(b, top.firstChild);
   }
 
-  /* ===== /news、/articles 列表頁頁首的「＋ 新增文章」 ===== */
+  /* ===== 頁首情境鈕：列表頁「＋ 新增文章」、文章內頁「✎ 編輯這篇」 ===== */
   function mountNewPostBtn() {
-    if (!/^\/(news|articles)\/?$/.test(location.pathname)) return;
     var c = document.querySelector("header .ctrls");
-    if (!c || document.getElementById("abNewPost")) return;
-    var a = el("a", "ctrl", "＋");
-    a.id = "abNewPost";
-    a.href = "/admin?new=" + newCat;
-    a.title = tx("新增文章", "New post");
-    a.setAttribute("aria-label", tx("新增文章", "New post"));
-    c.insertBefore(a, c.firstChild);
+    if (!c) return;
+    if (/^\/(news|articles)\/?$/.test(location.pathname) && !document.getElementById("abNewPost")) {
+      var a = el("a", "ctrl", "＋");
+      a.id = "abNewPost";
+      a.href = "/admin?new=" + newCat;
+      a.title = tx("新增文章", "New post");
+      a.setAttribute("aria-label", tx("新增文章", "New post"));
+      c.insertBefore(a, c.firstChild);
+    }
+    if (artM && !document.getElementById("abEditPost")) {
+      var e2 = el("a", "ctrl", "✎");
+      e2.id = "abEditPost";
+      e2.href = "/admin?edit=" + artM[2];
+      e2.title = tx("編輯這篇文章", "Edit this post");
+      e2.setAttribute("aria-label", tx("編輯這篇文章", "Edit this post"));
+      c.insertBefore(e2, c.firstChild);
+    }
   }
 
   /* ===== 通用小對話框 ===== */
@@ -207,10 +182,12 @@
     }, 600);
   }
   function openSidebar() {
-    var sb = document.getElementById("sidebar");
-    if (sb && !sb.classList.contains("open")) {
-      var mb = document.getElementById("menuBtn");
-      if (mb) mb.click();
+    // v2.2 外殼：桌機收合＝.app.nosb、手機抽屜＝.app.sbopen；#sbToggle 兩種情況都能打開
+    var app = document.getElementById("app");
+    if (!app) return;
+    if (app.classList.contains("nosb") || !app.classList.contains("sbopen")) {
+      var tg = document.getElementById("sbToggle");
+      if (tg && (app.classList.contains("nosb") || window.matchMedia("(max-width:839.98px)").matches)) tg.click();
     }
   }
   function startMenuEdit() {
@@ -352,7 +329,6 @@
   }
 
   /* ===== 啟動 ===== */
-  adminNav();
   mountMenuEditBtn();
   mountNewPostBtn();
   // /settings 頁的「✎ 編輯選單」鈕靠這個進編輯模式（網站名稱等其他設定都在 /settings）

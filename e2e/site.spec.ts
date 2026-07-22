@@ -46,7 +46,8 @@ test("會員 pending → 管理員批准 → playground 串流回覆", async ({ 
   const member = await memberCtx.newPage();
   await devLogin(member, "e2e-member@example.com");
   await member.goto("/playground");
-  await expect(member.getByText("等待管理員批准")).toBeVisible();
+  // v2.2 起前端預設英文（伺服器端訊息仍是中文）
+  await expect(member.getByText("Waiting for approval")).toBeVisible();
 
   // 管理員批准（approve＝全服務）
   const adminCtx = await browser.newContext();
@@ -90,8 +91,8 @@ test("demo 體驗模式：匿名可聊、打滿 IP 日額 → 429 提示", async
   const anonCtx = await browser.newContext();
   const anon = await anonCtx.newPage();
   await anon.goto("/playground");
-  await expect(anon.locator(".pg-demo")).toContainText("體驗模式"); // 橫幅（模型選單裡也有這四個字）
-  await expect(anon.getByText("登入解鎖完整功能")).toBeVisible();
+  await expect(anon.locator(".pg-demo")).toContainText("Demo mode"); // 橫幅（v2.2 前端預設英文）
+  await expect(anon.getByText("Sign in for full access")).toBeVisible();
 
   await anon.locator(".pg-ta").fill("第一句");
   await anon.locator(".pg-send").click();

@@ -48,8 +48,8 @@ export const MEMBER_JS = `
   function $(id){return document.getElementById(id);}
   function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n;}
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
-  // 每次都讀最新語言（右上角切換後不必重載頁面）
-  function curLang(){try{return localStorage.getItem("ipua-lang")==="en"?"en":"zh";}catch(e){return "zh";}}
+  // 每次都讀最新語言（右上角切換後不必重載頁面）；v2.2 起預設英文
+  function curLang(){try{return localStorage.getItem("ipua-lang")==="zh"?"zh":"en";}catch(e){return "en";}}
   function tx(zh,en){return curLang()==="en"?en:zh;}
   // 頁面可註冊：切語言時重新渲染
   function onLang(fn){try{window.addEventListener("ipua:lang",fn);}catch(e){}}
