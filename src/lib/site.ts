@@ -196,6 +196,17 @@ const ICON_PANEL =
 // New chat（鉛筆＋方框）
 const ICON_NEW =
   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8 8 16l1.2-4z"/></svg>';
+// 日夜切換的三態圖示（2026-07-22）。
+// 原本用字元 ☀︎／☾／◐ — 但「黑白字形長什麼樣」完全由系統字型決定：Windows 的
+// Segoe UI Symbol 把 ☀ 畫成粗八芒星，iOS 的 Apple Symbols 畫成細到看不見光芒的小圓點，
+// 同一顆按鈕在兩台裝置上根本是兩個東西。改成 inline SVG＝自己帶字形，全平台一致。
+const ICON_SUN =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2M12 19.4v2M4.34 4.34l1.42 1.42M18.24 18.24l1.42 1.42M2.6 12h2M19.4 12h2M4.34 19.66l1.42-1.42M18.24 5.76l1.42-1.42"/></svg>';
+const ICON_MOON =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.7 13.6A8.5 8.5 0 1 1 10.4 3.3a6.8 6.8 0 0 0 10.3 10.3z"/></svg>';
+// 自動：半邊填滿的圓（原本的 ◐ 同義，但不吃系統字型）
+const ICON_AUTO =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.2"/><path d="M12 3.8a8.2 8.2 0 0 0 0 16.4z" fill="currentColor" stroke="none"/></svg>';
 
 // 側邊欄選單 HTML（v2.2）：
 //   第一個 section → 標題不顯示，連結平鋪（/playground 連結跳過 — 側欄頂端的 New chat 就是它）
@@ -287,7 +298,10 @@ export function pageShell(o: PageShellOpts): string {
     ' RSS" href="/feed">\n' +
     '<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">\n' +
     '<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#212121">\n' +
-    "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%90%3C/text%3E%3C/svg%3E\">\n" +
+    // favicon（2026-07-22 改）：本來是塞進 SVG 的 🌐 emoji — 跟日夜按鈕同一個毛病，
+    // 各家系統的 emoji 字型長相不同（有的裝置甚至畫成豆腐框）。改成純線條的圓角方框 □，
+    // 自己帶字形、到哪都一樣。灰階 #8f8f8f 是深淺兩色系都看得清的中間值（＝全站 --sub）。
+    "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='6' width='20' height='20' rx='5' fill='none' stroke='%238f8f8f' stroke-width='3'/%3E%3C/svg%3E\">\n" +
     // 外殼樣式先、headExtra（各頁自訂樣式）後 — 同權重時後者贏，各頁才蓋得過外殼。
     // v2.1 以前順序相反，頁面得用 html body 之類的 hack 拉權重；v2.2 改正。
     "<style>" +
@@ -328,7 +342,10 @@ export function pageShell(o: PageShellOpts): string {
     o.h1 +
     '</h1><div class="ctrls">' +
     '<button id="langToggle" class="ctrl" title="Language / 語言">EN</button>' +
-    '<button id="themeToggle" class="ctrl" title="Day / Night">☾</button></div></header>\n' +
+    // 初始內容＝月亮（伺服器預設輸出 data-theme="dark"）；腳本讀完 localStorage 再換成正確那顆
+    '<button id="themeToggle" class="ctrl" title="Day / Night">' +
+    ICON_MOON +
+    "</button></div></header>\n" +
     '  <div class="content"><div class="wrap">\n' +
     o.body +
     "\n" +
@@ -639,6 +656,7 @@ const SHELL_JS = `
   });
   /* --- 主題三段式（同儲存鍵）：night 深色（v2.2 起預設）/ day 淺色 / auto 依當地日夜。 --- */
   var THEME_MODES=["day","night","auto"],themeMode="night",autoCache=null;
+  var THEME_ICONS={day:${JSON.stringify(ICON_SUN)},night:${JSON.stringify(ICON_MOON)},auto:${JSON.stringify(ICON_AUTO)}};
   try{var m0=localStorage.getItem("ipua-theme-mode");if(THEME_MODES.indexOf(m0)>=0)themeMode=m0}catch(e){}
   try{autoCache=localStorage.getItem("ipua-auto")}catch(e){}
   function autoThemeGuess(){
@@ -649,8 +667,8 @@ const SHELL_JS = `
     var th=themeMode==="night"?"dark":(themeMode==="auto"?autoThemeGuess():"light");
     document.documentElement.setAttribute("data-theme",th);
     var b=document.getElementById("themeToggle");
-    /* \\ufe0e 強制黑白字形（不然 ☀ 會被畫成彩色 emoji）；自動模式用幾何符 ◐ 取代彩色 🌓 */
-    b.textContent=themeMode==="day"?"\\u2600\\ufe0e":(themeMode==="night"?"\\u263e":"\\u25d0");
+    /* 三顆都是 inline SVG（不吃系統字型 — 見 ICON_SUN 上方註解） */
+    b.innerHTML=themeMode==="day"?THEME_ICONS.day:(themeMode==="night"?THEME_ICONS.night:THEME_ICONS.auto);
     b.title=t("theme."+themeMode);b.setAttribute("aria-label",t("theme."+themeMode));
   }
   document.getElementById("themeToggle").addEventListener("click",function(){

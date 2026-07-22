@@ -285,7 +285,7 @@ curl -X PUT https://uaip.cc.cd/api/admin/menu ^
 | `demo_per_ip_day` | 每 IP 每日上限；`null`＝內建預設 10 |
 | `demo_global_day` | **全站**每日上限（燒錢保險）；`null`＝內建預設 200 |
 | `demo_max_tokens` | 體驗模式每則回覆的 token 上限；**`null`（留空）＝不限** — 跟會員路徑一樣不對上游設 `max_tokens`（anthropic 例外：那家必填，維持 4096）。要硬性壓每則成本才填正整數 |
-| `dumb_mode` | `true`／`false` — **Dumb mode**（2026-07-22 v2.2）：把所有會員鎖在單一「隱藏」模型。開啟且 `dumb_channel`＋`dumb_model` 都設好才生效（GET 回 `dumb_active` 表示實際生效與否）。生效時非管理員會員：`/api/playground/models` 只回 `{ rows:[], dumb:true }`、聊天請求的 channel/model 一律被伺服器蓋成指定值、對話列表與內頁的 channel/model 遮空 — 會員不知道也改不了正在用什麼模型。**管理員不受限**；不影響 API 中轉與體驗模式。網頁在 /settings 的「Playground」卡 |
+| `dumb_mode` | `true`／`false` — **Dumb mode**（2026-07-22 v2.2）：把所有會員鎖在單一「隱藏」模型。開啟且 `dumb_channel`＋`dumb_model` 都設好才生效（GET 回 `dumb_active` 表示實際生效與否）。生效時非管理員會員：`/api/playground/models` 只回 `{ rows:[], dumb:true }`、聊天請求的 channel/model 一律被伺服器蓋成指定值、對話列表與內頁的 channel/model 遮空 — 會員不知道也改不了正在用什麼模型。**體驗模式也會跟著隱藏模型選單**，但訪客實際跑的仍是 `demo_channel`＋`demo_models` 第一個（成本上限不被蓋掉，見 §5f）。**管理員不受限**；不影響 API 中轉。網頁在 /settings 的「Playground」卡 |
 | `dumb_channel` | Dumb mode 鎖定的渠道 slug（空字串＝刪鍵＝不生效） |
 | `dumb_model` | Dumb mode 鎖定的模型名（要在該渠道的模型清單裡；空字串＝刪鍵） |
 | `vpn_public` | `true`／`false` — **VPN 對外展示**（2026-07-22 v2.2）：開啟後側邊欄選單與 /vpn 頁對**所有訪客**可見（未批准者看到登入／等待批准閘門；訂閱本身仍要逐人批准 vpn 服務）。`false`（預設）＝維持 VPN 隱形：選單不渲染、/vpn 裝成不存在。網頁在 /settings 的「VPN」卡 |
@@ -466,7 +466,9 @@ Authorization: Bearer uak-你的金鑰
 
 **體驗模式（2026-07-17 v2.0.0，ADR-0009）**：管理員開 `demo_mode`＋設 `demo_channel` 後，**完全未登入**的訪客也能打 `GET /api/playground/models`（只回 demo 那一組、渠道顯示名固定「體驗模式」）與 `POST /api/playground/chat`（SSE 第一筆事件是 `{conv,title?,demo:true}` — `demo:true` 是給前端的旗標「別去動對話列表」，`conv` 照給，前端靠它把同一頁的後續訊息串成同一則）。限制：渠道與模型鎖白名單、輸入整包 4000 字、`demo_max_tokens` 有填才壓回覆長度；**對話會存進資料庫**（2026-07-21 起）但掛在 `demo:public` 名下、**只有管理員的 `/api/admin/conversations` 看得到**，訪客沒有任何讀取管道；fail-closed 限流（每 IP 分鐘/日＋全站日；超額 429 `demo-rate-limited`／`demo-quota-exceeded`，限流器故障 503 `demo-unavailable`）。**日額度用完的兩種 429 會附 `contact_url`**（管理員有設的話；文案不提 IP，`hint` 尾端也接同一條網址）— 跟會員配額同一套，見 §6 的 `contact_url`；每分鐘那條不附（等一下就好）。
 
-**Dumb mode（2026-07-22 v2.2）**：管理員開 `dumb_mode`＋指定 `dumb_channel`×`dumb_model`（見 §5 網站設定）後，**非管理員會員**被鎖在那一個模型且看不到它是什麼：`models` 只回 `{ rows:[], dumb:true }`（前端據此隱藏模型選單、聊天不帶 channel/model）；`chat` 的 channel/model 一律被伺服器蓋成指定值；對話列表與內頁的 `channel`/`model` 欄位遮成空字串。管理員與 API 中轉、體驗模式都不受影響。
+**Dumb mode（2026-07-22 v2.2）**：管理員開 `dumb_mode`＋指定 `dumb_channel`×`dumb_model`（見 §5 網站設定）後，**非管理員會員**被鎖在那一個模型且看不到它是什麼：`models` 只回 `{ rows:[], dumb:true }`（前端據此隱藏模型選單、聊天不帶 channel/model）；`chat` 的 channel/model 一律被伺服器蓋成指定值；對話列表與內頁的 `channel`/`model` 欄位遮成空字串。管理員與 API 中轉不受影響。
+
+**體驗模式也一起噤聲**：dumb 開著時匿名訪客的 `models` 同樣只回 `{ demo:true, rows:[], dumb:true }`，`chat` 的 channel/model 也被蓋掉。但蓋成的是**體驗模式自己的**設定（`demo_channel` ＋ `demo_models` 的第一個；白名單留空就取該渠道的第一個模型），**不是** `dumb_channel`/`dumb_model` — 因為體驗模式的 fail-closed 限流與 `demo_max_tokens` 全綁在 `demo_channel` 上，被 dumb 的渠道蓋掉等於那些燒錢上限一起失效。也就是說 dumb 對體驗模式只做「不讓訪客挑」，跑哪個仍由體驗模式的設定決定。
 
 - `GET /api/playground/models` → `{ rows:[{ slug, name, models }] }`（只列啟用中且有設模型的渠道；**不含 `kind`** — 那等於標示真實提供商）。
 - `GET /api/playground/conversations` → `{ rows:[{ id, title, channel, model, created_at, updated_at }] }`（自己的，新→舊，最多 100 筆）。**管理員要看全站所有人的對話**看 §5 的 `/api/admin/conversations`（或 /logs 的「總對話紀錄」分頁）。

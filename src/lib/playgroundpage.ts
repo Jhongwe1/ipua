@@ -240,7 +240,8 @@ const PG_JS = `
         return api("/api/settings").then(function(s){
           if(!s.demo){paint();return;}
           demoMode=true;
-          return api("/api/playground/models").then(function(r){groups=r.rows||[];buildApp();});
+          /* dumb 開著時體驗模式同樣拿到空清單＋dumb:true — 沒有模型選單，照樣能聊 */
+          return api("/api/playground/models").then(function(r){groups=r.rows||[];dumbMode=!!r.dumb;buildApp();});
         });
       }
       if(!hasSvc()){paint();return;}
@@ -286,6 +287,11 @@ const PG_JS = `
     var b=document.getElementById("pgTitle");
     if(!b||!window.SBPOP)return;
     var list=allModels();
+    /* 平常每列只寫模型名 — 渠道名是管理員的內部命名，會員看了也沒用。
+       只有「同一個模型名掛在兩個以上渠道」時才補上「· 渠道名」，讓那幾列還分得出來。
+       鍵加 "m:" 前綴：模型名要是剛好叫 constructor／toString，裸物件會撞到原型上的東西。 */
+    var dup={};
+    list.forEach(function(x){dup["m:"+x.name]=(dup["m:"+x.name]||0)+1;});
     window.SBPOP.open(b,function(p){
       if(!list.length){
         var d=el("div","phead",tx("尚無可用模型","No models yet"));p.appendChild(d);return;
@@ -296,7 +302,7 @@ const PG_JS = `
           try{localStorage.setItem("ipua-pg-model",model);}catch(e){}
           updateTitle();
         });
-        it.textContent=x.name+" \\u00b7 "+x.ch;
+        it.textContent=dup["m:"+x.name]>1?(x.name+" \\u00b7 "+x.ch):x.name;
         if(x.v===model){
           var k=el("span","pk","\\u2713");
           it.appendChild(k);

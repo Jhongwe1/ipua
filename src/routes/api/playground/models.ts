@@ -16,6 +16,10 @@ export async function onRequestGet({ request, env }: RouteCtx): Promise<Response
     if (!request.headers.get("authorization")) {
       const cfg = await demoCfg(env);
       if (cfg.on) {
+        // Dumb mode 開著時體驗模式也一起噤聲（2026-07-22）：匿名訪客同樣看不到模型選單。
+        // 實際跑哪個模型由 chat.ts 用「體驗模式自己的設定」決定（見 demoLockedModel）—
+        // demo 的燒錢上限綁在 demo_channel 上，不能被 dumb 的渠道蓋掉。
+        if ((await dumbCfg(env)).on) return json({ demo: true, rows: [], dumb: true });
         try {
           const ch = await env.DB.prepare(
             "SELECT slug,models FROM relay_channels WHERE slug=?1 AND enabled=1"

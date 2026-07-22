@@ -30,7 +30,7 @@ import {
 } from "../../../lib/playground.js";
 import { fastDelta } from "../../../lib/fastsse.js";
 import { checkQuota } from "../../../lib/quota.js";
-import { demoCfg, demoUser, demoCheck, DEMO_DEFAULTS } from "../../../lib/demo.js";
+import { demoCfg, demoUser, demoCheck, demoLockedModel, DEMO_DEFAULTS } from "../../../lib/demo.js";
 import { reportError, reportErrorNow } from "../../../lib/observe.js";
 import type { DemoCfg } from "../../../lib/demo.js";
 import type { UsageAcc } from "../../../lib/playground.js";
@@ -107,14 +107,22 @@ export async function onRequestPost(context: RouteCtx): Promise<Response> {
   try {
     body = await request.json();
   } catch (e) {}
-  // Dumb mode（v2.2）：非管理員的會員一律鎖定管理員指定的渠道×模型 —
-  // 在 cleanChat 之前直接蓋掉 body（前端本來就不帶；開發者工具硬塞別的也沒用）。
-  // demo（匿名）不套用 — demo 有自己的渠道鎖定。
-  if (!demo && !isAdm && body && typeof body === "object") {
-    const dcfg = await dumbCfg(env);
-    if (dcfg.on) {
-      body.channel = dcfg.channel;
-      body.model = dcfg.model;
+  // Dumb mode（v2.2）：在 cleanChat 之前直接蓋掉 body（前端本來就不帶；開發者工具硬塞別的也沒用）。
+  //   會員（非管理員）→ 鎖到管理員指定的 dumb_channel×dumb_model。
+  //   demo（匿名）→ 2026-07-22 起也一起鎖，但鎖的是**體驗模式自己的**渠道與模型：
+  //     dumb 只負責「不讓人挑」，跑哪個仍歸 demo_channel 管（見 demoLockedModel 的理由）。
+  if (body && typeof body === "object") {
+    if (demo) {
+      if ((await dumbCfg(env)).on) {
+        body.channel = demo.channel;
+        body.model = await demoLockedModel(env, demo);
+      }
+    } else if (!isAdm) {
+      const dcfg = await dumbCfg(env);
+      if (dcfg.on) {
+        body.channel = dcfg.channel;
+        body.model = dcfg.model;
+      }
     }
   }
   const v = cleanChat(body);

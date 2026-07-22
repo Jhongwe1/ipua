@@ -10,7 +10,8 @@
 // 天花板就只剩「則數 × 模型自己的上限」— 要硬性壓成本就去 /settings 填一個數字。
 import { json } from "./site.js";
 import { reportErrorNow } from "./observe.js";
-import type { Env, UserRow } from "../types.js";
+import { chModels } from "./playground.js";
+import type { ChannelRow, Env, UserRow } from "../types.js";
 
 export const DEMO_DEFAULTS = {
   demo_per_min: 3, // 每 IP 每分鐘
@@ -102,6 +103,27 @@ export async function demoUser(env: Env): Promise<UserRow> {
     .run();
   u = await sel();
   return u!;
+}
+
+/**
+ * Dumb mode 開著時，體驗模式該跑哪個模型（2026-07-22）—— 訪客不再自己挑，伺服器代選。
+ *
+ * 刻意「不」沿用 dumb_channel／dumb_model：demo 的成本控管（fail-closed 限流、
+ * demo_max_tokens）整套綁在 demo_channel 上，被 dumb 的渠道蓋掉等於那些上限全失效。
+ * 所以這裡只在 demo 自己的設定裡挑：白名單有填就第一個，沒填就該渠道的第一個。
+ * 後者多一次 D1 讀 — 想省就去 /settings 把 demo_models 填起來（本來就該填）。
+ * 回空字串＝這渠道根本沒模型可用，呼叫端會照常撞上 cleanChat 的 400。
+ */
+export async function demoLockedModel(env: Env, cfg: DemoCfg): Promise<string> {
+  if (cfg.models.length) return cfg.models[0];
+  try {
+    const ch = await env.DB.prepare("SELECT models FROM relay_channels WHERE slug=?1 AND enabled=1")
+      .bind(cfg.channel)
+      .first<ChannelRow>();
+    return chModels(ch)[0] || "";
+  } catch (e) {
+    return "";
+  }
 }
 
 export type DemoCheckResult = { ok: true; resp?: undefined } | { ok: false; resp: Response };

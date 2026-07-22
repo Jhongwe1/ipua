@@ -192,6 +192,152 @@ describe("dumb mode 生效時的 API 行為", () => {
   });
 });
 
+// dumb 開著時體驗模式也不給挑模型（2026-07-22）。關鍵在「鎖的是誰的設定」：
+// 選單一樣消失，但實際跑的仍是 demo_channel＋demo_models 的第一個 —— 不是 dumb_channel。
+// 若哪天有人把這行改成沿用 dumb 的渠道，demo 的 fail-closed 限流與 demo_max_tokens
+// 就整套被繞過（那些上限全綁在 demo_channel 上），這個 describe 就是那道防線。
+describe("dumb mode × 體驗模式", () => {
+  const anon = (url: string, init?: RequestInit) =>
+    makeCtx({
+      url: url,
+      init: Object.assign({}, init, {
+        headers: Object.assign(
+          { origin: ORIGIN, "cf-connecting-ip": "203.0.113.77" },
+          (init && init.headers) || {}
+        )
+      })
+    });
+  const demoOn = async (channel: string, models: string) => {
+    await setKey("demo_mode", "1");
+    await setKey("demo_channel", channel);
+    await setKey("demo_models", models);
+  };
+
+  it("models：匿名訪客拿到 demo:true＋rows:[]＋dumb:true（模型名一個都不外洩）", async () => {
+    const demoCh = await seedChannel({ slug: "democh", models: "demo-a,demo-b" });
+    const other = await seedChannel({ slug: "otherch", models: "secret-model" });
+    await demoOn(demoCh.slug, "demo-a");
+    await dumbOn(other.slug, "secret-model");
+
+    const j: any = await (await modelsGet(anon(ORIGIN + "/api/playground/models"))).json();
+    expect(j.demo).toBe(true);
+    expect(j.rows).toEqual([]);
+    expect(j.dumb).toBe(true);
+    expect(JSON.stringify(j)).not.toContain("demo-a");
+    expect(JSON.stringify(j)).not.toContain("secret-model");
+  });
+
+  it("chat：不帶 channel/model 照樣能聊，且跑的是體驗模式的渠道而非 dumb 的", async () => {
+    await seedChannel({
+      slug: "democh",
+      kind: "openai",
+      base_url: "https://demoup.example.com",
+      models: "demo-a,demo-b"
+    });
+    const other = await seedChannel({
+      slug: "otherch",
+      base_url: "https://dumbup.example.com",
+      models: "secret-model"
+    });
+    await demoOn("democh", "demo-a");
+    await dumbOn(other.slug, "secret-model");
+    // 只攔截 demo 那家上游 — dumb 的上游若被打到，assertNoPendingInterceptors 會紅燈
+    fetchMock
+      .get("https://demoup.example.com")
+      .intercept({ path: "/v1/chat/completions", method: "POST" })
+      .reply(200, 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { "content-type": "text/event-stream" }
+      });
+
+    const ctx = anon(ORIGIN + "/api/playground/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }) // 前端在 dumb 下不帶
+    });
+    const resp = await chatPost(ctx);
+    expect(resp.status).toBe(200);
+    await readAll(resp);
+    await drainWaits(ctx);
+    const conv: any = await env.DB.prepare(
+      "SELECT channel,model FROM pg_conversations ORDER BY id DESC LIMIT 1"
+    ).first();
+    expect(conv.channel).toBe("democh");
+    expect(conv.model).toBe("demo-a"); // 白名單第一個，不是 dumb_model
+  });
+
+  it("chat：訪客硬塞 dumb 的渠道也會被蓋回體驗模式的（devtools 繞不過）", async () => {
+    await seedChannel({
+      slug: "democh",
+      kind: "openai",
+      base_url: "https://demoup.example.com",
+      models: "demo-a"
+    });
+    await seedChannel({
+      slug: "otherch",
+      base_url: "https://dumbup.example.com",
+      models: "secret-model"
+    });
+    await demoOn("democh", "demo-a");
+    await dumbOn("otherch", "secret-model");
+    fetchMock
+      .get("https://demoup.example.com")
+      .intercept({ path: "/v1/chat/completions", method: "POST" })
+      .reply(200, 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { "content-type": "text/event-stream" }
+      });
+
+    const ctx = anon(ORIGIN + "/api/playground/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        channel: "otherch",
+        model: "secret-model",
+        messages: [{ role: "user", content: "hi" }]
+      })
+    });
+    const resp = await chatPost(ctx);
+    expect(resp.status).toBe(200);
+    await readAll(resp); // 一定要把串流讀完，不然連線懸著會拖垮測試的隔離儲存
+    await drainWaits(ctx);
+    const conv: any = await env.DB.prepare(
+      "SELECT channel,model FROM pg_conversations ORDER BY id DESC LIMIT 1"
+    ).first();
+    expect(conv.channel).toBe("democh");
+  });
+
+  it("demo_models 留空時取該渠道的第一個模型", async () => {
+    await seedChannel({
+      slug: "democh",
+      kind: "openai",
+      base_url: "https://demoup.example.com",
+      models: "first-one,second-one"
+    });
+    await seedChannel({ slug: "otherch", models: "secret-model" });
+    await demoOn("democh", ""); // 白名單留空＝該渠道全開
+    await dumbOn("otherch", "secret-model");
+    fetchMock
+      .get("https://demoup.example.com")
+      .intercept({ path: "/v1/chat/completions", method: "POST" })
+      .reply(200, 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+        headers: { "content-type": "text/event-stream" }
+      });
+
+    const ctx = anon(ORIGIN + "/api/playground/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] })
+    });
+    const resp = await chatPost(ctx);
+    expect(resp.status).toBe(200);
+    await readAll(resp);
+    await drainWaits(ctx);
+    const conv: any = await env.DB.prepare(
+      "SELECT channel,model FROM pg_conversations ORDER BY id DESC LIMIT 1"
+    ).first();
+    expect(conv.model).toBe("first-one");
+  });
+});
+
 describe("/api/menu 的 VPN 過濾（v2.2）", () => {
   it("匿名：預設看不到 /vpn；vpn_public 開了才看得到", async () => {
     let j: any = await (await menuGet(makeCtx({ url: ORIGIN + "/api/menu" }))).json();

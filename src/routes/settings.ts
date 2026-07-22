@@ -147,7 +147,7 @@ const BODY = `
     <div class="swrow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
       <div class="g">
         <div class="t1">Dumb mode（鎖定單一隱藏模型）</div>
-        <div class="t2">開啟後所有會員在 Playground 只能用下面指定的模型：模型選單整個消失、對話紀錄也查不到模型名稱 — 會員不知道也改不了正在用什麼（你自己不受限，照常有完整選單）。<b>要同時選好模型才會生效</b>；不影響 API 中轉與體驗模式。</div>
+        <div class="t2">開啟後所有會員在 Playground 只能用下面指定的模型：模型選單整個消失、對話紀錄也查不到模型名稱 — 會員不知道也改不了正在用什麼（你自己不受限，照常有完整選單）。<b>要同時選好模型才會生效</b>。<b>體驗模式也會跟著隱藏模型選單</b>，但訪客實際跑的仍是體驗模式自己設定的渠道與模型（白名單第一個），成本上限不受影響。不影響 API 中轉。</div>
         <div id="dumbState" class="t2"></div>
       </div>
       <button id="tglDumb" class="tgl" type="button">—</button>
